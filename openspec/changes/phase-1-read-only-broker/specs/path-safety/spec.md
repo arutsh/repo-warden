@@ -63,6 +63,21 @@ The broker SHALL deny any path that resolves into the repository's `.git` direct
 - **WHEN** `cfg -> .git/config` exists and `cfg` is requested
 - **THEN** the call is denied
 
+### Requirement: Nested repositories and worktrees are not exposed
+The broker SHALL deny any path that passes through a directory below the repository root which contains a `.git` entry (file or directory). This covers nested worktrees, submodules and vendored repositories.
+
+#### Scenario: File in a nested worktree
+- **WHEN** `.claude/worktrees/feature/` is a linked worktree inside the repository and `.claude/worktrees/feature/src/app.py` is requested
+- **THEN** the call is denied
+
+#### Scenario: Nested repository directory
+- **WHEN** `vendor/lib/.git/` exists and `vendor/lib/README.md` is requested
+- **THEN** the call is denied
+
+#### Scenario: Symlink into a nested repository
+- **WHEN** `lib -> vendor/lib` exists and `lib/README.md` is requested
+- **THEN** the call is denied
+
 ### Requirement: Sensitive paths are not exposed
 The broker SHALL deny any path whose basename (lexical or resolved) matches a configured sensitive pattern. The default patterns SHALL be `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx` and `id_*`, and the operator SHALL be able to extend them through the global policy configuration.
 

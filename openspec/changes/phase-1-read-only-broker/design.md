@@ -9,6 +9,7 @@ Fixed constraints:
 - Reuse mcp-airlock as a pinned library without forking or copying.
 - cplt is an external binary.
 - stdio MCP only. No generic shell capability.
+- Supported option, not a requirement: one linked worktree per change, each with its own cplt sandbox (project dir = the worktree) and broker. Worktrees go next to the main checkout, not inside it.
 
 What we checked in `mcp-airlock==0.2.0`, which is byte-identical to commit `4e1793d` of the fork github.com/arutsh/mcp-airlock-broker:
 - `Policy` is a pydantic model with `extra="forbid"`. `ToolRule` has tiers, principals, count_arg, output and blast_radius, and **no `where` rules** (those exist only on unreleased main). `Policy.load(path, environment)` reads the whole YAML.
@@ -112,9 +113,11 @@ Mapping from airlock's `Decision.verdict`:
 
 ### D6. Audit
 `Auditor.record(phase, call_id, capability, args, verdict, rule_id, tier, status, latency_ms, detail)` calls `sink.write(...)` with:
-- `tool=capability`, `method="tools/call"`, `principal=ctx.principal`, `upstream_status=status`
+- `tool=capability`, `method="tools/call"`, `principal=ctx.principal`. `upstream_status` stays null, because airlock's Postgres table types it as `integer` and our status is a string.
 - `args` = only the capability's `audit_fields` from validated input, or the raw top-level keys and a size for invalid input. Never contents.
-- `detail` = `{repo, session, backend, result_bytes, truncated, message}`, with the message `scrub()`bed.
+- `detail` = `{repo, session, backend, status, result_bytes, truncated, message}`, with the message `scrub()`bed.
+
+Each sink is written directly rather than through `MultiAudit`, which logs and swallows a failing sink, so that a failed write is seen and the call fails closed. Startup writes a `session.start` record, which also proves the sink is writable.
 
 The sink is `audit_from_env(path)`, so Postgres is used when `AIRLOCK_AUDIT_DSN` is set. The env var name comes from airlock and is documented as-is. The default path is `${XDG_STATE_HOME:-~/.local/state}/repo-warden/audit.jsonl`, and a realpath inside the repo is refused. A failed write at startup is fatal. A failed write mid-call fails that call closed.
 
@@ -125,8 +128,9 @@ The sink is `audit_from_env(path)`, so Postgres is used when `AIRLOCK_AUDIT_DSN`
 3. Lexical `.git` component check (case-insensitive) and lexical sensitive check on each component's basename.
 4. `os.path.realpath(root/rel)`, then a `commonpath([root, real]) == root` check.
 5. Repeat the `.git` and sensitive checks on the real relative path.
+6. Nested-boundary check: `lstat` each ancestor directory of `rel_real` below the root for a `.git` entry (file or directory). If one exists, the result is `path.nested_repo`.
 
-The result is a `SafePath(rel_real)`.
+The result is a `SafePath(rel_real)`. Step 6 adds one `lstat` per path component, which is negligible next to the read itself.
 
 `open_nofollow(ctx, safe)` walks `rel_real` from `ctx.root_fd`, opening each directory component with `os.open(name, O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC, dir_fd=fd)`. The final component is opened with `O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC`, and `fstat` then requires `S_ISREG` (`O_NONBLOCK` stops a FIFO from blocking). Because `rel_real` is already symlink-free, any symlink found during the walk means a swap happened, and ELOOP/ENOTDIR are reported as `path.race`. `openat2(RESOLVE_BENEATH)` would be stronger, but Python has no binding for it. The component walk gives the same guarantee for our purposes.
 
@@ -140,6 +144,11 @@ Listing uses `os.scandir` on an fd opened the same way, with `follow_symlinks=Fa
 - (b) `/proc/self/status` shows `Seccomp: 2` on Linux.
 - (c) An `O_CREAT|O_EXCL` attempt in the repo's parent directory fails with EACCES/EPERM/EROFS. If it unexpectedly succeeds, the file is removed and the probe fails.
 - (d) If `~/.ssh` exists, `os.listdir` fails with a permission error.
+
+Worktree behaviour, checked on the dev host on 2026-10-02:
+- With cplt started inside a linked worktree (sibling or nested), `git status` and `git commit` work and the main checkout is not writable.
+- With cplt started at the main checkout, a nested worktree is writable and a sibling one is not.
+- Probe (c) therefore holds for a broker running in a worktree.
 
 The exact probes will be confirmed against `cplt exec` on the dev host during implementation. If a probe doesn't hold under real cplt, it is replaced with one that does and the design is updated. The probes are not weakened.
 
@@ -157,14 +166,14 @@ Base argv: `git --no-pager` with these `-c` overrides:
 - `credential.helper=`, `protocol.allow=never`
 - `diff.external=`, `core.attributesFile=/dev/null`
 
-Repository-defined drivers are neutralised by first running `git config --list --name-only` with the same hardened env (listing config executes nothing, and includes are resolved). Every key matching `filter.<x>.(clean|smudge|process)`, `diff.<x>.(command|textconv)` or `merge.<x>.driver` is then overridden with `-c key=`, and `filter.<x>.required=false` is added. Diff commands always get `--no-ext-diff --no-textconv --no-color`.
+Repository-defined drivers are neutralised by first running `git config --list --name-only` with the same hardened env (listing config executes nothing; includes and a linked worktree's `config.worktree` are resolved). Every key matching `filter.<x>.(clean|smudge|process)`, `diff.<x>.(command|textconv)` or `merge.<x>.driver` is then overridden with `-c key=`, and `filter.<x>.required=false` is added. Diff commands always get `--no-ext-diff --no-textconv --no-color`.
 
 Sensitive exclusion uses pathspec magic `:(exclude,glob)**/<pat>` per pattern, plus `:(exclude).git`. The diff output is post-filtered: hunks whose `diff --git a/X b/Y` header names a sensitive path are dropped. `git.status` uses `--porcelain=v2 -z --branch`, and `git.log` uses `--no-patch` with a NUL-separated `--format`. The repo top-level check in `repo.py` uses the same builder.
 
 Alternative considered: `GIT_ATTR_SOURCE` set to the empty tree. It doesn't cover `.git/info/attributes` and needs git ≥ 2.40, so the key-override approach is used, with tests as the backstop.
 
 ### D10. Search
-With ripgrep, the argv is `rg --no-config --json --no-follow --hidden --max-columns 500 --max-count <n> --glob '!.git' --glob '!<pat>'… [--fixed-strings] -e <pattern> -- <safe subpath>`. `--pre` and `-z` are never passed, and `RIPGREP_CONFIG_PATH` is not in the env allowlist. Results are parsed from JSON, re-checked against the sensitive matcher, and capped.
+With ripgrep, the argv is `rg --no-config --json --no-follow --hidden --max-columns 500 --max-count <n> --glob '!.git' --glob '!<pat>'… [--fixed-strings] -e <pattern> -- <safe subpath>`. `--pre` and `-z` are never passed, and `RIPGREP_CONFIG_PATH` is not in the env allowlist. Results are parsed from JSON, re-checked against the sensitive matcher and the nested-boundary check, and capped. rg doesn't recognise a `.git` file as a boundary, so matches from nested worktrees are dropped in this post-filter. The fallback walker prunes those directories instead, and so does `filesystem.list`, which reports them as entries without descending.
 
 The fallback is a pure-Python `os.walk(followlinks=False)` over the safe subpath, skipping `.git`, sensitive files, files over a size limit and files with NUL bytes in their first 8 KiB. It uses `re` (pattern-length bounded) or literal matching, with the same caps. The fallback is selected by `shutil.which("rg")` at startup, and the choice is recorded in audit `detail`.
 
@@ -191,6 +200,8 @@ A comment in pyproject names the fork fallback pin. Dev dependencies: `pytest`, 
 - [The mcp-airlock import pulls in the HTTP stack, psycopg and otel] → Accepted for V1 and recorded as an upstream gap (lazy imports or a core extra).
 - [Tier L3 is charged to the blast-radius window] → Read capabilities use L0 in the example policy, and the README explains this.
 - [VS Code-hosted agents run MCP servers outside cplt] → The docs show `cplt exec -- repo-warden …` at user scope and state that the agent's native tools are then uncontained.
+- [On Linux, cplt cannot block `.env` files inside the project directory (Landlock grants the project full read access; cplt warns about this, checked on 2026-10-03). A sibling checkout's `.env` is blocked] → The broker's sensitive-path rules deny them for broker calls, and the README states that native tools can still read them. Tracked files are considered part of the repo and are not guarded.
+- [A nested worktree is writable from a sandbox started at the main checkout] → The docs recommend placing worktrees next to the main checkout and running one sandbox per worktree. The broker refuses to expose nested repositories and worktrees.
 - [Python has no `openat2`] → The O_NOFOLLOW component walk from a root fd is used, with a test that swaps in a symlink after the check.
 
 ## Migration Plan

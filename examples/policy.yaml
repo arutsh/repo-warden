@@ -1,0 +1,24 @@
+# repo-warden global policy. Install it OUTSIDE any repository, e.g.
+#   ~/.config/repo-warden/policy.yaml   (or $XDG_CONFIG_HOME/repo-warden/policy.yaml)
+# The broker refuses to start if this file resolves inside the repository it serves.
+#
+# Format: mcp-airlock 0.2.0's policy model plus an optional `repo_warden:` block.
+# Anything not listed under `tools:` is denied. Tiers for the `local` environment:
+#   L0  allow (not charged to the blast-radius window; use it for read capabilities)
+#   L2  needs approval; denied in this version because no approver exists yet
+#   L3  allow, charged to the blast-radius window
+#   L1  rejected at load time
+
+repo_warden:
+  # Added to the built-in sensitive patterns (.env, .env.*, *.pem, *.key, *.p12, *.pfx, id_*).
+  # A pattern without "/" matches any path component; "dir/**" hides a directory.
+  sensitive_paths_extra: []
+
+environment: local   # always forced to "local"
+
+output:
+  max_chars: 16000   # default output cap per call, in characters
+
+tools:
+  filesystem.read:
+    tiers: { local: L0 }

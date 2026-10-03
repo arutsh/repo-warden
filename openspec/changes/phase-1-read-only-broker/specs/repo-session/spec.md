@@ -25,6 +25,10 @@ The broker SHALL take the repository from the required `--repo` argument, resolv
 - **WHEN** `--repo` is a symlink to a repository top level
 - **THEN** the broker binds to the symlink's real target path and reports that path
 
+#### Scenario: Linked worktree
+- **WHEN** `--repo` points at the top level of a linked git worktree
+- **THEN** the broker starts with that worktree as its root, and the worktree's `.git` pointer file is never exposed
+
 ### Requirement: No capability can change the repository or workspace
 The broker SHALL NOT expose any capability that sets, switches or redefines the repository, workspace, root directory or session. No capability input SHALL accept a repository or workspace selector.
 

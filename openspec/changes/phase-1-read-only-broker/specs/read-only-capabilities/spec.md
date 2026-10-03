@@ -32,12 +32,20 @@ Defines the read-only development capabilities offered in Phase 1 and their guar
 - **WHEN** a directory has more entries than the limit
 - **THEN** the result is cut at the limit and marked truncated
 
+#### Scenario: Nested worktree not descended
+- **WHEN** a directory containing a `.git` entry (nested worktree, submodule or repository) is below the listed path
+- **THEN** it is listed as an entry but its contents are not returned
+
 ### Requirement: search.code
 `search.code` SHALL search file contents for a pattern (literal by default, regex optional) within an optional safe sub-path and glob, returning matches as path, line number and a bounded line excerpt, up to a match limit. It SHALL use ripgrep when available and a built-in walker otherwise. It SHALL skip `.git`, sensitive files and binary files, SHALL NOT follow symlinks, and SHALL NOT use repository-supplied preprocessors, decompressors or configuration.
 
 #### Scenario: Secret file not searched
 - **WHEN** `.env` contains `API_KEY=abc` and `search.code` looks for `API_KEY`
 - **THEN** no match from `.env` is returned
+
+#### Scenario: Nested worktree not searched
+- **WHEN** a nested worktree inside the repository contains a matching line
+- **THEN** no match from inside the nested worktree is returned
 
 #### Scenario: Same results without ripgrep
 - **WHEN** ripgrep is not installed
@@ -65,7 +73,7 @@ Defines the read-only development capabilities offered in Phase 1 and their guar
 - **THEN** at most five commits are returned without diffs
 
 ### Requirement: Repository-controlled git configuration does not execute
-Git capabilities SHALL NOT run any hook, fsmonitor, clean/smudge/process filter, textconv, external diff, pager, credential helper, SSH command or network fetch configured by the repository, by the user's global config, or through attributes.
+Git capabilities SHALL NOT run any hook, fsmonitor, clean/smudge/process filter, textconv, external diff, pager, credential helper, SSH command or network fetch configured by the repository (including per-worktree config), by the user's global config, or through attributes.
 
 #### Scenario: Malicious fsmonitor and hooks
 - **WHEN** the repository config sets `core.fsmonitor` and `core.hooksPath` to scripts that create a marker file, and git.status, git.diff and git.log are called
@@ -74,6 +82,10 @@ Git capabilities SHALL NOT run any hook, fsmonitor, clean/smudge/process filter,
 #### Scenario: Malicious filter and textconv
 - **WHEN** `.gitattributes` assigns a filter and a diff driver whose clean, textconv and command scripts create a marker file
 - **THEN** git.status and git.diff succeed or fail without creating the marker file
+
+#### Scenario: Malicious per-worktree config
+- **WHEN** the broker runs in a linked worktree whose `config.worktree` (with `extensions.worktreeConfig` enabled) sets `core.fsmonitor` to a script that creates a marker file
+- **THEN** git.status, git.diff and git.log never create the marker file
 
 ### Requirement: Outputs are bounded and scrubbed
 Every capability result SHALL be bounded by the capability's own limits and by the policy's output cap. Error messages returned to the agent SHALL be scrubbed of credential-shaped substrings.

@@ -7,7 +7,7 @@ AI coding agents reach repositories through generic tools (shell, raw file acces
 ## What Changes
 
 - New Python package `repo-warden` (Python >= 3.11, uv, MIT) with a console script `repo-warden --repo <path> [--policy] [--audit] [--backend {cplt,direct}]`.
-- One process is bound to one git top-level repository and one session for its lifetime. No capability can change the repo or workspace.
+- One process is bound to one git top level (a main checkout or a linked worktree) and one session for its lifetime. No capability can change the repo or workspace. Nested repositories and worktrees inside it are not exposed.
 - Every call goes through one broker pipeline: validate → policy → audit (intent) → handler → audit (outcome). Unknown capabilities, invalid input and anything the policy does not allow are denied and audited.
 - Safe repo-relative path handling, which rejects escapes, symlinks that leave the repo, `.git/` internals and a configurable list of sensitive paths. It also holds up against a symlink swapped in after the check.
 - Policy reuses `mcp_airlock.policy` (pinned `mcp-airlock==0.2.0`). The policy file must live outside the repo. L2 (approval) is denied in V1, L1 is a load error, and there is a seam so a later repo-level policy can only tighten.
