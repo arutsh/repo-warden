@@ -27,14 +27,14 @@
 
 ## 2. Execution hardening and cplt containment — depends on 1
 
-- [ ] 2.1 Complete `DirectBackend`: `start_new_session`, `killpg(SIGKILL)` on timeout, a drain-and-discard pipe reader past the cap, `stdin=DEVNULL`, empty temp `HOME`, cwd must be in the repo. Verify with tests for:
+- [x] 2.1 Complete `DirectBackend`: `start_new_session`, `killpg(SIGKILL)` on timeout, a drain-and-discard pipe reader past the cap, `stdin=DEVNULL`, empty temp `HOME`, cwd must be in the repo. Verify with tests for:
   - a sleeping child plus grandchild both killed on timeout
   - 50 MB of output capped and marked truncated without memory blow-up
   - `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN` and `SSH_AUTH_SOCK` absent from the child env
   - shell metacharacters passed literally
-- [ ] 2.2 Implement `verify_containment()` and `CpltBackend` with the D8 probes (marker, seccomp, write refused in the repo's parent, `~/.ssh` unreadable if present). Make it the CLI default, with a refusal message that points to `--backend direct` and the docs. Verify with unit tests on fake probe inputs: marker-only fails, all pass succeeds, each single failing probe is reported by name.
-- [ ] 2.3 Run the probes for real under `cplt exec -- uv run python -m repo_warden.execution --probe` on this host. If a probe doesn't hold, replace it with one that does and update design.md D8 (never weaken it). Add an integration test that runs only under cplt (skipped otherwise). Verify that the probe passes under cplt (started both in a main checkout and in a linked worktree next to it) and refuses outside it.
-- [ ] 2.4 Add a README section on broker vs cplt responsibilities and the containment probe, stating that it is a heuristic, and the optional per-change worktree setup (one cplt sandbox and one broker per worktree, worktrees placed next to the main checkout). Verify that the stated cplt behaviours match `cplt check` output on this host.
+- [x] 2.2 Implement `verify_containment()` and `CpltBackend` with the D8 probes (marker, seccomp, write refused in the repo's parent, `~/.ssh` unreadable if present). Make it the CLI default, with a refusal message that points to `--backend direct` and the docs. Verify with unit tests on fake probe inputs: marker-only fails, all pass succeeds, each single failing probe is reported by name.
+- [x] 2.3 Run the probes for real under `cplt exec -- uv run python -m repo_warden.execution --probe` on this host. If a probe doesn't hold, replace it with one that does and update design.md D8 (never weaken it). Add an integration test that runs only under cplt (skipped otherwise). Verify that the probe passes under cplt (started both in a main checkout and in a linked worktree next to it) and refuses outside it.
+- [x] 2.4 Add a README section on broker vs cplt responsibilities and the containment probe, stating that it is a heuristic, and the optional per-change worktree setup (one cplt sandbox and one broker per worktree, worktrees placed next to the main checkout). Verify that the stated cplt behaviours match `cplt check` output on this host.
 - [ ] 2.5 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
 
 ## 3. filesystem.list and search.code — depends on 1, 2

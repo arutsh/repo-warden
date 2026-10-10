@@ -42,8 +42,11 @@ async def open_repo(path: str | os.PathLike[str], backend: ExecutionBackend) -> 
     real = os.path.realpath(path)
     if not os.path.isdir(real):
         raise RepoError(f"repository path does not exist or is not a directory: {real}")
-    res = await backend.run(git_argv("rev-parse", "--show-toplevel"), cwd=Path(real),
-                            timeout_s=10, max_output=65536, env=git_env())
+    try:
+        res = await backend.run(git_argv("rev-parse", "--show-toplevel"), cwd=Path(real),
+                                timeout_s=10, max_output=65536, env=git_env())
+    except ValueError as e:
+        raise RepoError(str(e)) from e
     if res.timed_out or res.returncode != 0:
         raise RepoError(f"not inside a git working tree: {real}")
     top = os.path.realpath(res.stdout.decode(errors="replace").strip())

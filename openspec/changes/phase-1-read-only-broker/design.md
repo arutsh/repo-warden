@@ -141,7 +141,7 @@ Listing uses `os.scandir` on an fd opened the same way, with `follow_symlinks=Fa
 
 `CpltBackend` subclasses the direct runner. Its constructor calls `verify_containment()` and raises if any probe fails:
 - (a) `__CPLT_WRAPPED` is present.
-- (b) `/proc/self/status` shows `Seccomp: 2` on Linux.
+- (b) On Linux, `prctl(PR_GET_SECCOMP)` returns 2 (filter mode). This replaced reading `Seccomp: 2` from `/proc/self/status`: under real cplt, Landlock denies `/proc` (checked on 2026-10-03), while prctl reports the same kernel field.
 - (c) An `O_CREAT|O_EXCL` attempt in the repo's parent directory fails with EACCES/EPERM/EROFS. If it unexpectedly succeeds, the file is removed and the probe fails.
 - (d) If `~/.ssh` exists, `os.listdir` fails with a permission error.
 
@@ -150,7 +150,7 @@ Worktree behaviour, checked on the dev host on 2026-10-02:
 - With cplt started at the main checkout, a nested worktree is writable and a sibling one is not.
 - Probe (c) therefore holds for a broker running in a worktree.
 
-The exact probes will be confirmed against `cplt exec` on the dev host during implementation. If a probe doesn't hold under real cplt, it is replaced with one that does and the design is updated. The probes are not weakened.
+The probes were confirmed against `cplt exec` on the dev host on 2026-10-03; only (b) changed, as above. If a probe doesn't hold under real cplt, it is replaced with one that does and the design is updated. The probes are not weakened.
 
 ### D9. Hardened git (gitcmd.py)
 Base environment:

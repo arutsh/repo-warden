@@ -9,7 +9,7 @@ import anyio
 
 from .audit import Auditor, AuditError, default_audit_path
 from .broker import Broker
-from .execution import DirectBackend, ExecutionBackend
+from .execution import ContainmentError, CpltBackend, DirectBackend, ExecutionBackend
 from .handlers import default_registry
 from .mcp_server import build_server
 from .paths import SensitiveMatcher
@@ -25,10 +25,6 @@ DIRECT_WARNING = """\
 ************************************************************************"""
 
 
-class StartupError(Exception):
-    pass
-
-
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="repo-warden",
                                 description="Capability broker bound to one git repository (MCP over stdio).")
@@ -40,16 +36,15 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def make_backend(name: str) -> ExecutionBackend:
+def make_backend(name: str, repo: str) -> ExecutionBackend:
     if name == "direct":
         print(DIRECT_WARNING, file=sys.stderr, flush=True)
-        return DirectBackend()
-    raise StartupError("the cplt backend is not available in this build yet; "
-                       "run with --backend direct to start without verified containment")
+        return DirectBackend(repo)
+    return CpltBackend(repo)
 
 
 async def run(args: argparse.Namespace) -> None:
-    backend = make_backend(args.backend)
+    backend = make_backend(args.backend, args.repo)
     repo = await open_repo(args.repo, backend)
     try:
         loaded = load_policy(args.policy or default_policy_path(), repo.root)
@@ -74,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         anyio.run(run, args)
-    except (StartupError, RepoError, PolicyError, AuditError) as e:
+    except (ContainmentError, RepoError, PolicyError, AuditError) as e:
         print(f"repo-warden: {e}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
