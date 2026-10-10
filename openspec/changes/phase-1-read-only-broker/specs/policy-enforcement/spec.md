@@ -17,6 +17,21 @@ The broker SHALL load its policy from `--policy`, or by default from `$XDG_CONFI
 - **WHEN** no policy file exists at the configured or default location
 - **THEN** the broker refuses to start, and does not fall back to an allow-all policy
 
+### Requirement: Policy is protected from the sandbox
+With the `cplt` backend, the broker SHALL refuse to start unless the sandbox, not file permissions, prevents it from changing the policy: opening the policy file for writing SHALL fail, and creating a file in the policy file's directory SHALL fail with a permission or read-only error even though that directory's permission bits grant the user write access. The check SHALL be an active attempt, not a permission query.
+
+#### Scenario: Policy in a sandbox-writable location
+- **WHEN** the broker runs under cplt with `--policy /tmp/x/policy.yaml`
+- **THEN** it refuses to start and names the policy-protection check
+
+#### Scenario: Policy locked by the agent
+- **WHEN** the policy file is mode 0444 in a directory of mode 0555, both created inside the sandbox
+- **THEN** the broker refuses to start, because the denial comes from file permissions the agent controls
+
+#### Scenario: Operator policy granted read-only by cplt
+- **WHEN** the policy is `~/.config/repo-warden/policy.yaml` and cplt grants that directory read access only
+- **THEN** the check passes
+
 ### Requirement: Default deny and tier mapping
 The broker SHALL evaluate each call against the policy's `local` environment. A capability with no policy entry, or no tier for that environment, SHALL be denied. Tiers L0 and L3 SHALL allow. Tier L2 SHALL be denied with an "approval unavailable" reason while no approver is configured. A policy that assigns tier L1 to any capability, in any form including principal overrides, SHALL be rejected at load time.
 

@@ -30,6 +30,7 @@ What we checked in `mcp-airlock==0.2.0`, which is byte-identical to commit `4e17
 - Protecting against the agent's own native tools (documented limitation).
 - A per-command `cplt exec` wrapping mode (not possible inside the V1 sandbox; recursion is refused).
 - Windows support. Linux is the target; macOS should work for the direct backend but is untested.
+- Relying on MCP host controls (per-tool confirmations, tool on/off toggles, enterprise server allowlists) for per-call decisions. The broker's policy is the per-call gate in every host.
 
 ## Decisions
 
@@ -93,12 +94,17 @@ mcp-airlock's `Policy` forbids extra keys, and 0.2.0 has no argument rules. One 
 ```yaml
 repo_warden:                 # ours, optional
   sensitive_paths_extra: ["*.tfstate", "secrets/**"]
+  allow_direct_backend: false  # only read from the account policy, see below
 environment: local           # forced to "local" regardless
 tools:
   filesystem.read: { tiers: { local: L0 } }
   ...
 ```
 `load_policy` reads the YAML with `safe_load` and pops `repo_warden`, validating it with our own model (`extra="forbid"`). It validates the rest with `Policy.model_validate` after forcing `environment="local"`, and rejects L1 anywhere (tiers and principal overrides). The file's realpath must not be inside the repo. This is plain use of the public model, not monkeypatching. The missing `where` rules are recorded as an upstream gap.
+
+Two startup checks keep a rewritten command line (for example a repo-local MCP config edited by the agent) from swapping the policy or downgrading the backend:
+- **Policy protection (cplt backend).** Opening the policy file `O_WRONLY` must fail, and an `O_CREAT|O_EXCL` attempt in its directory must fail with EACCES/EPERM/EROFS while the directory's mode bits grant the user write. File permissions cannot be the reason, because the agent can chmod files it created (`/tmp/x/evil.yaml` at 0444 in a 0555 directory). A successful probe file is removed. `access(2)` is not used, because it does not see Landlock.
+- **Direct-backend authorisation.** `--backend direct` requires `repo_warden.allow_direct_backend: true` in `<pw_dir>/.config/repo-warden/policy.yaml`, read separately from the policy in use. `--policy`, `XDG_CONFIG_HOME` and `HOME` are ignored for it, because a rewritten command controls them. Inside cplt that file is read-only, so the downgrade cannot be self-granted. Outside cplt the user owns it anyway. It defaults to false.
 
 ### D5. Verdict mapping and stricter-only merge
 Mapping from airlock's `Decision.verdict`:
@@ -199,7 +205,9 @@ A comment in pyproject names the fork fallback pin. Dev dependencies: `pytest`, 
 - [New git config keys could execute code] → A denylist of known executing keys and a key-override approach, plus fixture tests per vector. Unknown future vectors remain a risk, so git versions are tracked in tests.
 - [The mcp-airlock import pulls in the HTTP stack, psycopg and otel] → Accepted for V1 and recorded as an upstream gap (lazy imports or a core extra).
 - [Tier L3 is charged to the blast-radius window] → Read capabilities use L0 in the example policy, and the README explains this.
-- [VS Code-hosted agents run MCP servers outside cplt] → The docs show `cplt exec -- repo-warden …` at user scope and state that the agent's native tools are then uncontained.
+- [VS Code-hosted agents run MCP servers outside cplt] → The docs show `cplt exec -- repo-warden …` registered at user scope, and state that the agent's native tools are then uncontained. VS Code's own per-server sandbox (`sandboxEnabled` with `sandbox.filesystem` / `sandbox.network`, macOS and Linux only) is a possible alternative. The cplt backend refuses to start under it (no `__CPLT_WRAPPED`), so it is documented only as `--backend direct` + `sandboxEnabled`, with containment unverified. A `vscode` probe set and backend, measured the same way the cplt probes were, goes on the ROADMAP.
+- [Repo-local MCP configs (`.vscode/mcp.json`, root `.mcp.json`) are writable by the agent under cplt. VS Code starts workspace servers on the host, outside cplt, without a separate prompt once the workspace is trusted, so a rewritten entry can run any command uncontained, whatever the server] → repo-warden cannot close this. The docs require user-scope registration, never a workspace config, and say not to trust workspaces an agent writes to. For CLI agents that start the broker inside cplt from a repo-local config, the policy-protection and direct-backend checks (D4) stop a rewritten command from swapping the policy or downgrading the backend.
+- [VS Code auto-approves tool calls of servers run with `sandboxEnabled`, and client-side tool toggles and confirmations can be overridden by the user] → The broker's policy is the only per-call gate there, and the threat model says so. Enterprise MCP controls decide which servers may run, not what a server's tools may do, so they complement the policy without replacing it.
 - [On Linux, cplt cannot block `.env` files inside the project directory (Landlock grants the project full read access; cplt warns about this, checked on 2026-10-03). A sibling checkout's `.env` is blocked] → The broker's sensitive-path rules deny them for broker calls, and the README states that native tools can still read them. Tracked files are considered part of the repo and are not guarded.
 - [A nested worktree is writable from a sandbox started at the main checkout] → The docs recommend placing worktrees next to the main checkout and running one sandbox per worktree. The broker refuses to expose nested repositories and worktrees.
 - [Python has no `openat2`] → The O_NOFOLLOW component walk from a root fd is used, with a test that swaps in a symlink after the check.
