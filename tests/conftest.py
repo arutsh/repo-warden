@@ -29,7 +29,7 @@ def repo_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 async def repo(repo_dir: Path):
-    ctx = await open_repo(repo_dir, DirectBackend())
+    ctx = await open_repo(repo_dir, DirectBackend(repo_dir))
     yield ctx
     ctx.close()
 
@@ -51,7 +51,7 @@ def make_broker(repo, tmp_path: Path):
         auditor = Auditor.open(audit_path, repo, "direct")
         made.append(auditor)
         broker = Broker(registry=Registry(caps), gate=PolicyGate(lp.policy), auditor=auditor, repo=repo,
-                        backend=DirectBackend(), sensitive=SensitiveMatcher(lp.config.sensitive_paths_extra))
+                        backend=DirectBackend(repo.root), sensitive=SensitiveMatcher(lp.config.sensitive_paths_extra))
         return broker, audit_path
 
     yield make

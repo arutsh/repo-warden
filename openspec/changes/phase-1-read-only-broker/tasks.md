@@ -27,14 +27,14 @@
 
 ## 2. Execution hardening and cplt containment — depends on 1
 
-- [ ] 2.1 Complete `DirectBackend`: `start_new_session`, `killpg(SIGKILL)` on timeout, a drain-and-discard pipe reader past the cap, `stdin=DEVNULL`, empty temp `HOME`, cwd must be in the repo. Verify with tests for:
+- [x] 2.1 Complete `DirectBackend`: `start_new_session`, `killpg(SIGKILL)` on timeout, a drain-and-discard pipe reader past the cap, `stdin=DEVNULL`, empty temp `HOME`, cwd must be in the repo. Verify with tests for:
   - a sleeping child plus grandchild both killed on timeout
   - 50 MB of output capped and marked truncated without memory blow-up
   - `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN` and `SSH_AUTH_SOCK` absent from the child env
   - shell metacharacters passed literally
-- [ ] 2.2 Implement `verify_containment()` and `CpltBackend` with the D8 probes (marker, seccomp, write refused in the repo's parent, `~/.ssh` unreadable if present). Make it the CLI default, with a refusal message that points to `--backend direct` and the docs. Verify with unit tests on fake probe inputs: marker-only fails, all pass succeeds, each single failing probe is reported by name.
-- [ ] 2.3 Run the probes for real under `cplt exec -- uv run python -m repo_warden.execution --probe` on this host. If a probe doesn't hold, replace it with one that does and update design.md D8 (never weaken it). Add an integration test that runs only under cplt (skipped otherwise). Verify that the probe passes under cplt (started both in a main checkout and in a linked worktree next to it) and refuses outside it.
-- [ ] 2.4 Add a README section on broker vs cplt responsibilities and the containment probe, stating that it is a heuristic, and the optional per-change worktree setup (one cplt sandbox and one broker per worktree, worktrees placed next to the main checkout). Verify that the stated cplt behaviours match `cplt check` output on this host.
+- [x] 2.2 Implement `verify_containment()` and `CpltBackend` with the D8 probes (marker, seccomp, write refused in the repo's parent, `~/.ssh` unreadable if present). Make it the CLI default, with a refusal message that points to `--backend direct` and the docs. Verify with unit tests on fake probe inputs: marker-only fails, all pass succeeds, each single failing probe is reported by name.
+- [x] 2.3 Run the probes for real under `cplt exec -- uv run python -m repo_warden.execution --probe` on this host. If a probe doesn't hold, replace it with one that does and update design.md D8 (never weaken it). Add an integration test that runs only under cplt (skipped otherwise). Verify that the probe passes under cplt (started both in a main checkout and in a linked worktree next to it) and refuses outside it.
+- [x] 2.4 Add a README section on broker vs cplt responsibilities and the containment probe, stating that it is a heuristic, and the optional per-change worktree setup (one cplt sandbox and one broker per worktree, worktrees placed next to the main checkout). Verify that the stated cplt behaviours match `cplt check` output on this host.
 - [ ] 2.5 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
 
 ## 3. filesystem.list and search.code — depends on 1, 2
@@ -54,11 +54,17 @@
 - [ ] 4.4 Implement `git.diff` (working tree or `--staged`, safe pathspecs, `:(exclude)` sensitive patterns, header post-filter, `--no-ext-diff --no-textconv`, byte cap). Verify with a test where a tracked `.env` and `src/app.py` are modified: only `src/app.py` is in the output. Also test the cap and truncation.
 - [ ] 4.5 Implement `git.log` (`--no-patch`, NUL-separated format, `max_count` bound, optional safe path). Verify that it returns metadata only and respects `max_count`.
 - [ ] 4.6 Finish the README:
-  - the threat model
+  - the threat model, including that VS Code auto-approves calls to sandboxed servers and that enterprise MCP controls govern which servers run, not what they do, so the broker's policy is the per-call gate
   - limitations: native tools bypass the broker, the audit log is writable in the sandbox (Postgres INSERT-only role as the stronger option), repo-local MCP configs are agent-writable, and on Linux cplt cannot block `.env` files inside the sandbox's project directory (Landlock limitation, warned by cplt itself), so gitignored secrets there are readable by native tools and only broker calls deny them
-  - user-scope MCP registration for VS Code and for CLI agents under `cplt`, with the VS Code caveat
-  - a ROADMAP
+  - user-scope MCP registration for VS Code and for CLI agents under `cplt`, why repo-warden must never go in `.vscode/mcp.json` or `.mcp.json` (Workspace Trust, writable by the agent, started outside cplt), the VS Code caveat, and VS Code's `sandboxEnabled` with `--backend direct` as an unverified alternative
+  - the policy-protection check and the `allow_direct_backend` authorisation, with the one-time setup for direct-mode users
+  - a ROADMAP, including a `vscode` probe set and backend, measured the same way the cplt probes were
 
   Add `docs/upstream-gaps.md`, covering the missing `where` rules in 0.2.0, the heavy import graph, and approval tokens inside the HTTP app. Verify that every command in the README runs as written against a scratch repo.
-- [ ] 4.7 Integration check: under `cplt exec`, start `repo-warden --repo <scratch>` with the default backend, connect a real MCP stdio client, call all six tools plus one denied and one unknown tool, and confirm the audit JSONL has the expected records outside the repo. Record the result in the PR description.
-- [ ] 4.8 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
+- [ ] 4.7 Implement the D4 startup checks:
+  - policy protection under the cplt backend (write-open and create probes, with the mode-bit condition)
+  - the `allow_direct_backend` authorisation read from `<pw_dir>/.config/repo-warden/policy.yaml`, ignoring `--policy`, `XDG_CONFIG_HOME` and `HOME`
+
+  Add `allow_direct_backend` (commented out) to `examples/policy.yaml`. Verify with unit tests on fake inputs: a writable policy dir refused, a 0444 file in a 0555 dir refused, a sandbox-style denial on a user-writable dir accepted, direct refused without authorisation, refused when only a `--policy` file grants it, and allowed when the account policy grants it. Under `cplt exec`, verify that a policy in `/tmp` is refused and `~/.config/repo-warden/policy.yaml` (granted with `--allow-read`) is accepted.
+- [ ] 4.8 Integration check: under `cplt exec`, start `repo-warden --repo <scratch>` with the default backend, connect a real MCP stdio client, call all six tools plus one denied and one unknown tool, and confirm the audit JSONL has the expected records outside the repo. Record the result in the PR description.
+- [ ] 4.9 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.

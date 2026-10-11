@@ -53,8 +53,16 @@ The default `cplt` backend SHALL refuse to start unless containment is verified 
 - **THEN** it refuses to start and points to `--backend direct` and the setup docs
 
 ### Requirement: Uncontained execution is explicit
-The `direct` backend SHALL only be used when explicitly selected, and SHALL print a prominent warning to stderr at startup stating that no OS containment is verified.
+The `direct` backend SHALL only be used when explicitly selected and when the account's own policy file authorises it, and SHALL print a prominent warning to stderr at startup stating that no OS containment is verified. The authorisation SHALL be `repo_warden.allow_direct_backend: true` in `<home>/.config/repo-warden/policy.yaml`, where `<home>` comes from the password database. `--policy`, `XDG_CONFIG_HOME` and `HOME` SHALL NOT change where the authorisation is read from. It SHALL default to false.
 
-#### Scenario: Direct backend
-- **WHEN** the broker is started with `--backend direct`
+#### Scenario: Direct backend authorised
+- **WHEN** the account policy sets `allow_direct_backend: true` and the broker is started with `--backend direct`
 - **THEN** it starts and writes a warning to stderr before serving requests, and records the backend in the audit records
+
+#### Scenario: Direct backend not authorised
+- **WHEN** the account policy is missing or does not set `allow_direct_backend: true` and the broker is started with `--backend direct`
+- **THEN** it refuses to start and names the missing authorisation
+
+#### Scenario: Authorisation only in a --policy file
+- **WHEN** `--policy` points at a file that sets `allow_direct_backend: true` but the account policy does not
+- **THEN** the broker refuses to start

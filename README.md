@@ -9,8 +9,7 @@ It does not provide OS isolation. In the intended setup the agent, the broker an
 process run inside a `cplt` sandbox, and repo-warden adds the semantic layer
 on top: which development action this is, and whether it is allowed.
 
-> Status: early development. Only `filesystem.read` exists so far, and only the `direct` backend
-> starts; the contained `cplt` backend comes next.
+> Status: early development. Only `filesystem.read` exists so far.
 
 ## Install
 
@@ -50,13 +49,36 @@ plus an optional `repo_warden:` block (see [examples/policy.yaml](examples/polic
 
 ## Run
 
+Inside a cplt sandbox (the default `cplt` backend):
+
+```sh
+cd /path/to/your/repo
+cplt --allow-exec /path/to/repo-warden \
+     --allow-read ~/.config/repo-warden \
+     --allow-write ~/.local/state/repo-warden \
+     exec -- uv run --project /path/to/repo-warden repo-warden --repo .
+```
+
+cplt's project directory is the repository you serve, so the sandbox has to be told about
+everything else the broker needs:
+
+- `--allow-exec` lets it read and run the repo-warden checkout and its `.venv`, without being able to
+  modify it.
+- `--allow-read` lets it read the policy.
+- `--allow-write` lets it write the audit log.
+
+The repository must not live under a path the sandbox can write outside the project, such as
+`/tmp`: the containment probe would then see a writable parent and refuse to start.
+
+Without cplt, for development only:
+
 ```sh
 uv run repo-warden --repo /path/to/your/repo --backend direct
 ```
 
-`--repo` must be the top level of a git working tree. The broker serves MCP over stdio.
-`--backend direct` runs child processes without verified OS containment and prints a warning to
-stderr saying so.
+`--repo` must be the top level of a git working tree. The broker serves MCP over stdio. The default
+backend refuses to start unless containment is verified (see below). `--backend direct` runs child
+processes without verified OS containment and prints a warning to stderr saying so.
 
 Options:
 
@@ -65,9 +87,65 @@ Options:
 | `--repo PATH` | required |
 | `--policy FILE` | `$XDG_CONFIG_HOME/repo-warden/policy.yaml` |
 | `--audit FILE` | `$XDG_STATE_HOME/repo-warden/audit.jsonl` (`~/.local/state/...`) |
-| `--backend {cplt,direct}` | `cplt` (not available yet) |
+| `--backend {cplt,direct}` | `cplt` |
 
 Set `AIRLOCK_AUDIT_DSN` to a Postgres DSN to also write audit records to Postgres.
+
+## Containment: broker vs cplt
+
+repo-warden and cplt do different jobs, and the intended setup
+uses both. The agent, the broker and every process the broker starts run in one cplt sandbox.
+
+| | cplt (OS level) | repo-warden (semantic level) |
+|---|---|---|
+| Decides | which files, network and executables any process may touch | which development action an agent may take through the broker |
+| Enforced by | the kernel (Landlock + seccomp on Linux, Seatbelt on macOS) | the broker's policy, path rules and audit |
+| Covers the agent's native tools | yes | no: native shell and file tools bypass the broker |
+| Repo-local secrets (`.env`) | not on Linux: the project dir is fully readable (cplt warns about this) | denied for every broker call |
+| Audit trail | network log only | every call and decision |
+
+The broker runs children (git, rg) directly. They inherit the sandbox, and each also gets an
+allowlisted environment, an empty temporary `HOME`, stdin from `/dev/null`, a timeout that kills
+its whole process group, capped output, and a working directory inside the repository.
+
+### The containment probe
+
+With the default `cplt` backend, the broker refuses to start unless all of these hold:
+
+| Probe | Passes when |
+|---|---|
+| `marker` | `__CPLT_WRAPPED` is set |
+| `seccomp` | `prctl(PR_GET_SECCOMP)` reports filter mode (2). Linux only. cplt denies `/proc`, so `/proc/self/status` cannot be used |
+| `parent_write` | creating a file in the repository's parent directory is refused |
+| `ssh` | `~/.ssh` (from the password database, not `$HOME`) is unreadable, if it exists |
+
+The marker alone is never trusted. The probe is a **heuristic**: it shows that this process looks
+like it is in a cplt sandbox with the expected restrictions. It does not prove the full policy.
+Run it yourself with:
+
+```sh
+cplt exec -- uv run python -m repo_warden.execution --probe
+```
+
+It prints each probe and exits 0 only if all of them pass. `cplt check` shows what the sandbox
+itself enforces.
+
+### Optional: one worktree per change
+
+To work on several changes at once, give each one a linked worktree **next to** the main checkout
+(not inside it), with its own cplt sandbox and its own broker:
+
+```sh
+git -C ~/repos/app worktree add ../app-feature-x -b feature-x
+cd ~/repos/app-feature-x
+cplt --allow-exec /path/to/repo-warden --allow-read ~/.config/repo-warden \
+     --allow-write ~/.local/state/repo-warden \
+     exec -- uv run --project /path/to/repo-warden repo-warden --repo .
+```
+
+cplt's project directory is then the worktree, so the main checkout and sibling worktrees are not
+writable from it, and the broker binds to the worktree. A worktree nested inside the main checkout
+would be writable from a sandbox started at the main checkout, which is why worktrees go beside it.
 
 ## Capabilities
 
