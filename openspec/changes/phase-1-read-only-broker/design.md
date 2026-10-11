@@ -181,9 +181,11 @@ Alternative considered: `GIT_ATTR_SOURCE` set to the empty tree. It doesn't cove
 ### D10. Search
 With ripgrep, the argv is `rg --no-config --json --no-follow --hidden --max-columns 500 --max-count <n> --glob '!.git' --glob '!<pat>'… [--fixed-strings] -e <pattern> -- <safe subpath>`. `--pre` and `-z` are never passed, and `RIPGREP_CONFIG_PATH` is not in the env allowlist. Results are parsed from JSON, re-checked against the sensitive matcher and the nested-boundary check, and capped. rg doesn't recognise a `.git` file as a boundary, so matches from nested worktrees are dropped in this post-filter. The fallback walker prunes those directories instead, and so does `filesystem.list`, which reports them as entries without descending.
 
-The fallback is a pure-Python `os.walk(followlinks=False)` over the safe subpath, skipping `.git`, sensitive files, files over a size limit and files with NUL bytes in their first 8 KiB. It uses `re` (pattern-length bounded) or literal matching, with the same caps. The fallback is selected by `shutil.which("rg")` at startup, and the choice is recorded in audit `detail`.
+The fallback is a pure-Python `os.walk(followlinks=False)` over the safe subpath, skipping `.git`, sensitive files, files over a size limit and files with NUL bytes in their first 8 KiB. It uses the `regex` package (pattern-length bounded, `re`-compatible syntax) or literal matching, with the same caps. The fallback is selected by `shutil.which("rg")` at startup, and the choice is recorded in audit `detail`.
 
-Catastrophic-regex risk in the fallback is bounded by the wall-clock deadline checked per file. The rg path is bounded by the backend timeout.
+Catastrophic-regex risk in the fallback is bounded by the wall-clock deadline. Checking it only between files is not enough, because one line can backtrack indefinitely. Also, `re` holds the GIL while it matches, which would stall the event loop as well as the worker thread. Each line match therefore calls `regex`'s `search(..., timeout=<time left>, concurrent=True)`, which ends the match at the deadline and releases the GIL meanwhile. The deadline is also checked once per directory. The rg path is bounded by the backend timeout, and its regex engine does not backtrack.
+
+rg is path-based. It opens each directory and file by name and follows a component that was swapped for a symlink after it was listed. `--no-follow` only covers links that are already present when it lists a directory. The fd-based guarantee of D7 therefore does not extend to the rg engine: a concurrent swap can make rg read outside the repository, and the post-filter cannot see this because the reported path is the in-repo one. This is accepted. The backend's containment holds it back (cplt limits what rg can reach), and with `--backend direct` it is a documented residual risk (see Risks).
 
 ### D11. MCP adapter
 The low-level `mcp.server.lowlevel.Server` is used instead of FastMCP, so tool schemas come straight from the pydantic models and one generic `call_tool` dispatches everything. `list_tools` maps the registry to `Tool(name=cap.name.replace(".", "_"), inputSchema=cap.input.model_json_schema())`. `call_tool(name, args)` makes one `broker.execute(mcp_to_cap.get(name, name), args)` call and converts the `Result` into text content plus `isError`. An unlisted name is passed through unchanged, so the broker denies and audits it.
@@ -193,6 +195,7 @@ uv project, `src/` layout, hatchling build, console script `repo-warden = repo_w
 - `mcp` (version that matches airlock's floor)
 - `pydantic>=2`
 - `pyyaml`
+- `regex` (search fallback: per-match timeouts, see D10)
 - `mcp-airlock==0.2.0`
 
 A comment in pyproject names the fork fallback pin. Dev dependencies: `pytest`, `pytest-asyncio`. `examples/policy.yaml` ships in the repo.
@@ -211,6 +214,7 @@ A comment in pyproject names the fork fallback pin. Dev dependencies: `pytest`, 
 - [On Linux, cplt cannot block `.env` files inside the project directory (Landlock grants the project full read access; cplt warns about this, checked on 2026-10-03). A sibling checkout's `.env` is blocked] → The broker's sensitive-path rules deny them for broker calls, and the README states that native tools can still read them. Tracked files are considered part of the repo and are not guarded.
 - [A nested worktree is writable from a sandbox started at the main checkout] → The docs recommend placing worktrees next to the main checkout and running one sandbox per worktree. The broker refuses to expose nested repositories and worktrees.
 - [Python has no `openat2`] → The O_NOFOLLOW component walk from a root fd is used, with a test that swaps in a symlink after the check.
+- [ripgrep opens paths by name, so a symlink swapped in while it runs can make it read outside the repository (D10)] → Under cplt the sandbox bounds what it can reach. With `--backend direct` this is accepted and documented in the README. Using only the fd-based walker on direct, and starting rg from the target fd, were considered. Neither was adopted for now.
 
 ## Migration Plan
 

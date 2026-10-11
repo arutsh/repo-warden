@@ -86,6 +86,12 @@ async def test_missing_file(broker):
     assert not res.ok and "not found" in res.error
 
 
+async def test_file_in_unreadable_dir(broker, locked):
+    b, _ = broker
+    res = await b.execute("filesystem.read", {"path": f"{locked}/secret.txt"})
+    assert not res.ok and "permission denied" in res.error
+
+
 async def test_extra_repo_field_denied(broker):
     b, _ = broker
     res = await b.execute("filesystem.read", {"path": "x", "repo": "/other"})
@@ -153,3 +159,11 @@ async def test_long_path_at_output_cap(make_broker, repo_dir):
     assert (
         res.ok and res.data["content"] == "0123456789" and res.data["truncated"] is True
     )
+
+
+async def test_read_in_nested_worktree_denied_and_audited(broker, nested):
+    b, audit = broker
+    res = await b.execute("filesystem.read", {"path": f"{nested['worktree']}/src/app.py"})
+    assert not res.ok and res.rule_id == "path.nested_repo"
+    last = records(audit)[-1]
+    assert last["rule_id"] == "path.nested_repo" and last["detail"]["status"] == "denied"

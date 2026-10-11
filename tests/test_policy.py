@@ -132,3 +132,13 @@ def test_empty_sensitive_pattern_rejected(tmp_path, repo_dir):
     pf = write(tmp_path / "p.yaml", 'repo_warden:\n  sensitive_paths_extra: ["/"]\ntools: {}\n')
     with pytest.raises(PolicyError, match="empty sensitive pattern"):
         load_policy(pf, str(repo_dir))
+
+
+async def test_example_policy_allows_every_registered_capability(repo_dir):
+    from repo_warden.handlers import default_registry
+
+    example = Path(__file__).resolve().parents[1] / "examples" / "policy.yaml"
+    gate = PolicyGate(load_policy(example, str(repo_dir)).policy)
+    for cap in default_registry():
+        decision = await gate.decide(cap.name, {}, "someone")
+        assert decision.verdict is Verdict.ALLOW and decision.tier == "L0", cap.name

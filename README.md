@@ -1,7 +1,7 @@
 # repo-warden
 
 repo-warden is a capability broker for AI coding agents. One process is bound to exactly one git
-repository. It exposes development actions (read a file, and later list, search and git) as MCP
+repository. It exposes development actions (read, list and search files, and later git) as MCP
 tools, and decides each call with a policy that lives outside the repository and outside the LLM.
 Every decision, including denials, is written to an audit log outside the repository.
 
@@ -9,7 +9,7 @@ It does not provide OS isolation. In the intended setup the agent, the broker an
 process run inside a `cplt` sandbox, and repo-warden adds the semantic layer
 on top: which development action this is, and whether it is allowed.
 
-> Status: early development. Only `filesystem.read` exists so far.
+> Status: early development. `filesystem.read`, `filesystem.list` and `search.code` exist so far.
 
 ## Install
 
@@ -32,6 +32,11 @@ resolves inside the repository it serves.
 mkdir -p ~/.config/repo-warden
 cp examples/policy.yaml ~/.config/repo-warden/policy.yaml
 ```
+
+The copy does not follow later changes to the example. When a release adds a capability, it stays
+denied (`allowlist.deny`, "tool '…' is not allowlisted") until you add it under `tools:`. For
+example, `filesystem.list` and `search.code` arrived after `filesystem.read`. The policy is read
+at startup, so restart the broker after editing it.
 
 The format is [mcp-airlock](https://github.com/arutsh/mcp-airlock-broker) 0.2.0's policy model
 plus an optional `repo_warden:` block (see [examples/policy.yaml](examples/policy.yaml)):
@@ -152,6 +157,37 @@ would be writable from a sandbox started at the main checkout, which is why work
 | MCP tool | Capability | Limits |
 |---|---|---|
 | `filesystem_read` | `filesystem.read` | 256 KiB per read by default (`max_bytes` up to 1 MiB), then the policy output cap |
+| `filesystem_list` | `filesystem.list` | 500 entries by default (`max_entries` up to 5000), `depth` 1 by default (up to 8), then the policy output cap |
+| `search_code` | `search.code` | 200 matching lines by default (`max_matches` up to 2000), 500 characters per line excerpt, files over 1 MiB skipped, 20 s timeout, then the policy output cap |
+
+Every capability takes paths relative to the repository root and refuses paths that leave it, go
+through `.git`, match a sensitive pattern, or pass through a nested repository, worktree or
+submodule (a directory below the root that holds a `.git` entry).
+
+- `filesystem.list` walks breadth first, sorted by name, so a cut keeps the shallowest entries. It
+  leaves out `.git` and sensitive entries, reports symlinks as `symlink` without following them, and
+  reports a nested repository as an entry with `nested_repo: true` without listing its contents.
+- `search.code` is literal unless `regex` is true, and takes an optional sub-path and file `glob`
+  (a glob cannot start with `!`). It skips `.git`, sensitive, binary (a NUL in the first 8 KiB) and
+  large files, never follows symlinks, and drops matches from nested repositories. It uses ripgrep
+  when `rg` is on `PATH` at startup (with `--no-config`, so no repository or user ripgrep config,
+  preprocessor or decompression applies), and a built-in walker otherwise, with a warning on
+  stderr at startup. The audit record names the engine and counts the matches the post-filter
+  dropped (`filtered`: `excluded` for git or sensitive paths, `nested` for nested repositories).
+  These counts are never returned to the agent. ripgrep searches nested repositories and the
+  post-filter drops their matches, so a high `nested` count next to `search timed out` or
+  `truncated` means a large nested repository is eating the budget. ripgrep honours `.gitignore`
+  and the walker does not, so the walker can return matches from ignored files. Glob syntax also
+  differs: the walker uses `fnmatch`, where `*` crosses `/` and `{a,b}` is not expanded, though
+  `**/` also matches zero directories as in ripgrep. Regex syntax is ripgrep's or that of the Python `regex` package
+  (compatible with `re`), depending on the engine. The walker gives each line match the time left
+  before the 20 s deadline, so a backtracking pattern ends as `search timed out`.
+- ripgrep opens directories and files by path and follows a path that became a symlink after it
+  was listed. The walker opens everything from the repository's root fd without following
+  symlinks. So if something swaps a path for a symlink while ripgrep runs, ripgrep can read outside
+  the repository, and that is held back only by the backend's containment. Under cplt the sandbox
+  limits what it can reach. With `--backend direct` nothing does, so a process that writes to the
+  repository while a search runs could expose files outside it.
 
 ## License
 

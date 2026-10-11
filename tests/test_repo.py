@@ -4,7 +4,10 @@ from pathlib import Path
 import pytest
 
 from repo_warden.execution import DirectBackend
+from repo_warden.paths import PathDenied, SafePath, SensitiveMatcher, resolve
 from repo_warden.repo import RepoError, open_repo
+
+from .conftest import git
 
 
 async def test_valid_top_level(repo_dir: Path):
@@ -53,5 +56,22 @@ async def test_symlinked_repo_binds_real_path(repo_dir: Path, tmp_path: Path):
     ctx = await open_repo(link, DirectBackend(repo_dir))
     try:
         assert ctx.root == str(repo_dir)
+    finally:
+        ctx.close()
+
+
+async def test_linked_worktree_as_repo(repo_dir: Path, tmp_path: Path):
+    git(repo_dir, "commit", "-q", "--allow-empty", "-m", "init")
+    wt = tmp_path / "wt"
+    git(repo_dir, "worktree", "add", "-q", str(wt))
+    (wt / "a.txt").write_text("hi")
+    ctx = await open_repo(wt, DirectBackend(wt))
+    try:
+        assert ctx.root == os.path.realpath(wt)
+        assert (wt / ".git").is_file()
+        with pytest.raises(PathDenied) as e:
+            resolve(ctx, ".git", SensitiveMatcher())
+        assert e.value.rule_id == "path.git"
+        assert resolve(ctx, "a.txt", SensitiveMatcher()) == SafePath("a.txt")
     finally:
         ctx.close()
