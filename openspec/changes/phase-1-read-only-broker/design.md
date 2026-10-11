@@ -171,6 +171,9 @@ Base argv: `git --no-pager` with these `-c` overrides:
 - `core.pager=cat`, `core.sshCommand=false`, `core.askPass=`
 - `credential.helper=`, `protocol.allow=never`
 - `diff.external=`, `core.attributesFile=/dev/null`
+- `log.showSignature=false` (signature checks run `gpg.program`), plus `diff.ignoreSubmodules=all`, `status.submoduleSummary=false` and `submodule.recurse=false`, because a submodule's git process would read config whose drivers were not enumerated
+
+An empty `diff.external=` does not unset an external diff: git then tries to run an empty command and fails, which executes nothing. Diff commands also pass `--no-ext-diff`, so it never comes to that. `git.log` passes `--no-show-signature`, and status and diff pass `--ignore-submodules=all`. A driver key that `-c` cannot express (a `=` or newline in the driver name) makes the call fail closed. The config is listed again before every call, because it is writable inside the sandbox.
 
 Repository-defined drivers are neutralised by first running `git config --list --name-only` with the same hardened env (listing config executes nothing; includes and a linked worktree's `config.worktree` are resolved). Every key matching `filter.<x>.(clean|smudge|process)`, `diff.<x>.(command|textconv)` or `merge.<x>.driver` is then overridden with `-c key=`, and `filter.<x>.required=false` is added. Diff commands always get `--no-ext-diff --no-textconv --no-color`.
 

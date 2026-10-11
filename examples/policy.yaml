@@ -13,6 +13,10 @@ repo_warden:
   # Added to the built-in sensitive patterns (.env, .env.*, *.pem, *.key, *.p12, *.pfx, id_*).
   # A pattern without "/" matches any path component; "dir/**" hides a directory.
   sensitive_paths_extra: []
+  # Lets `--backend direct` start. Read ONLY from <home>/.config/repo-warden/policy.yaml, where <home>
+  # comes from the password database; --policy, XDG_CONFIG_HOME and HOME cannot point elsewhere.
+  # Default false.
+  # allow_direct_backend: true
 
 environment: local   # always forced to "local"
 
@@ -25,4 +29,10 @@ tools:
   filesystem.list:
     tiers: { local: L0 }
   search.code:
+    tiers: { local: L0 }
+  git.status:
+    tiers: { local: L0 }
+  git.diff:
+    tiers: { local: L0 }
+  git.log:
     tiers: { local: L0 }
