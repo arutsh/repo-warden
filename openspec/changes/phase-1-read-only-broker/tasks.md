@@ -23,7 +23,7 @@
 - [x] 1.9 Add a guard test that no registered capability has a repo, workspace, root or session selector in its name or input schema. Verify that it passes, and that it fails when a dummy `workspace` field is temporarily added.
 - [x] 1.10 Implement `mcp_server.py` (low-level Server; `list_tools` from the registry with `.`→`_` names; `call_tool` is one `broker.execute`). Write `cli.py` with `--repo/--policy/--audit/--backend`; only `direct` works in this group, with its loud stderr warning. Verify with an in-memory MCP client test: list tools, a successful read, a denied call returning `isError`, and an unlisted tool name denied and audited.
 - [x] 1.11 Ship `examples/policy.yaml` (read capabilities at L0) and a README skeleton covering what it is, install, a run with `--backend direct`, and the policy file location and format. Verify that the documented command starts and lists tools against a scratch repo.
-- [ ] 1.12 Run `uv run pytest` clean; PR merged.
+- [x] 1.12 Run `uv run pytest` clean; PR merged.
 
 ## 2. Execution hardening and cplt containment — depends on 1
 
@@ -35,7 +35,7 @@
 - [x] 2.2 Implement `verify_containment()` and `CpltBackend` with the D8 probes (marker, seccomp, write refused in the repo's parent, `~/.ssh` unreadable if present). Make it the CLI default, with a refusal message that points to `--backend direct` and the docs. Verify with unit tests on fake probe inputs: marker-only fails, all pass succeeds, each single failing probe is reported by name.
 - [x] 2.3 Run the probes for real under `cplt exec -- uv run python -m repo_warden.execution --probe` on this host. If a probe doesn't hold, replace it with one that does and update design.md D8 (never weaken it). Add an integration test that runs only under cplt (skipped otherwise). Verify that the probe passes under cplt (started both in a main checkout and in a linked worktree next to it) and refuses outside it.
 - [x] 2.4 Add a README section on broker vs cplt responsibilities and the containment probe, stating that it is a heuristic, and the optional per-change worktree setup (one cplt sandbox and one broker per worktree, worktrees placed next to the main checkout). Verify that the stated cplt behaviours match `cplt check` output on this host.
-- [ ] 2.5 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
+- [x] 2.5 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
 
 ## 3. filesystem.list and search.code — depends on 1, 2
 
@@ -44,16 +44,16 @@
 - [x] 3.3 Implement `search.code` via ripgrep (`--no-config --json --no-follow`, sensitive `--glob` exclusions, no `--pre`/`-z`, literal by default) with post-filtering and caps. Verify with tests that a `.env` match is never returned, `.git` is never searched, the match limit truncates, a pattern like `$(id)` is treated literally, and a match inside a nested worktree is never returned.
 - [x] 3.4 Implement the pure-Python fallback walker (selected when `rg` is missing) with the same exclusions, size and binary skips, and a deadline. Verify by running the 3.3 test cases parametrised over both engines with `rg` hidden from `PATH`.
 - [x] 3.5 Add `filesystem.list` and `search.code` to the example policy and the README capability table with their limits. Verify that the MCP tool-list test now shows them.
-- [ ] 3.6 Run `uv run pytest` clean; PR merged.
+- [x] 3.6 Run `uv run pytest` clean; PR merged.
 
 ## 4. Git capabilities, hostile-repo hardening and release docs — depends on 1, 2
 
-- [ ] 4.1 Complete `gitcmd.py`: enumerate `filter.*`/`diff.*`/`merge.*` driver keys with `git config --list --name-only` under the hardened env and override them, plus `protocol.allow=never`, `credential.helper=`, `core.sshCommand=false`, `diff.external=`, `core.attributesFile=/dev/null`, `GIT_NO_LAZY_FETCH` and the others in D9. Verify with unit tests of the generated argv/env for a fixture config containing each driver kind.
-- [ ] 4.2 Build a hostile fixture repo whose `core.fsmonitor`, `core.hooksPath` hooks, `.gitattributes` clean/smudge filter, diff textconv, diff command and `diff.external` each `touch` a marker file, plus a linked worktree of it whose `config.worktree` (with `extensions.worktreeConfig`) sets a marker-creating `core.fsmonitor`. Verify that git.status, git.diff and git.log on it (and in the worktree) never create any marker, and that the test fails if the `-c` overrides are removed.
-- [ ] 4.3 Implement `git.status` (`--porcelain=v2 -z --branch`, entry cap). Verify with tests for modified, staged and untracked files, and that `.env` entries are hidden.
-- [ ] 4.4 Implement `git.diff` (working tree or `--staged`, safe pathspecs, `:(exclude)` sensitive patterns, header post-filter, `--no-ext-diff --no-textconv`, byte cap). Verify with a test where a tracked `.env` and `src/app.py` are modified: only `src/app.py` is in the output. Also test the cap and truncation.
-- [ ] 4.5 Implement `git.log` (`--no-patch`, NUL-separated format, `max_count` bound, optional safe path). Verify that it returns metadata only and respects `max_count`.
-- [ ] 4.6 Finish the README:
+- [x] 4.1 Complete `gitcmd.py`: enumerate `filter.*`/`diff.*`/`merge.*` driver keys with `git config --list --name-only` under the hardened env and override them, plus `protocol.allow=never`, `credential.helper=`, `core.sshCommand=false`, `diff.external=`, `core.attributesFile=/dev/null`, `GIT_NO_LAZY_FETCH` and the others in D9. Verify with unit tests of the generated argv/env for a fixture config containing each driver kind.
+- [x] 4.2 Build a hostile fixture repo whose `core.fsmonitor`, `core.hooksPath` hooks, `.gitattributes` clean/smudge filter, diff textconv, diff command and `diff.external` each `touch` a marker file, plus a linked worktree of it whose `config.worktree` (with `extensions.worktreeConfig`) sets a marker-creating `core.fsmonitor`. Verify that git.status, git.diff and git.log on it (and in the worktree) never create any marker, and that the test fails if the `-c` overrides are removed.
+- [x] 4.3 Implement `git.status` (`--porcelain=v2 -z --branch`, entry cap). Verify with tests for modified, staged and untracked files, and that `.env` entries are hidden.
+- [x] 4.4 Implement `git.diff` (working tree or `--staged`, safe pathspecs, `:(exclude)` sensitive patterns, header post-filter, `--no-ext-diff --no-textconv`, byte cap). Verify with a test where a tracked `.env` and `src/app.py` are modified: only `src/app.py` is in the output. Also test the cap and truncation.
+- [x] 4.5 Implement `git.log` (`--no-patch`, NUL-separated format, `max_count` bound, optional safe path). Verify that it returns metadata only and respects `max_count`.
+- [x] 4.6 Finish the README:
   - the threat model, including that VS Code auto-approves calls to sandboxed servers and that enterprise MCP controls govern which servers run, not what they do, so the broker's policy is the per-call gate
   - limitations: native tools bypass the broker, the audit log is writable in the sandbox (Postgres INSERT-only role as the stronger option), repo-local MCP configs are agent-writable, and on Linux cplt cannot block `.env` files inside the sandbox's project directory (Landlock limitation, warned by cplt itself), so gitignored secrets there are readable by native tools and only broker calls deny them
   - user-scope MCP registration for VS Code and for CLI agents under `cplt`, why repo-warden must never go in `.vscode/mcp.json` or `.mcp.json` (Workspace Trust, writable by the agent, started outside cplt), the VS Code caveat, and VS Code's `sandboxEnabled` with `--backend direct` as an unverified alternative
@@ -61,10 +61,10 @@
   - a ROADMAP, including a `vscode` probe set and backend, measured the same way the cplt probes were
 
   Add `docs/upstream-gaps.md`, covering the missing `where` rules in 0.2.0, the heavy import graph, and approval tokens inside the HTTP app. Verify that every command in the README runs as written against a scratch repo.
-- [ ] 4.7 Implement the D4 startup checks:
+- [x] 4.7 Implement the D4 startup checks:
   - policy protection under the cplt backend (write-open and create probes, with the mode-bit condition)
   - the `allow_direct_backend` authorisation read from `<pw_dir>/.config/repo-warden/policy.yaml`, ignoring `--policy`, `XDG_CONFIG_HOME` and `HOME`
 
   Add `allow_direct_backend` (commented out) to `examples/policy.yaml`. Verify with unit tests on fake inputs: a writable policy dir refused, a 0444 file in a 0555 dir refused, a sandbox-style denial on a user-writable dir accepted, direct refused without authorisation, refused when only a `--policy` file grants it, and allowed when the account policy grants it. Under `cplt exec`, verify that a policy in `/tmp` is refused and `~/.config/repo-warden/policy.yaml` (granted with `--allow-read`) is accepted.
-- [ ] 4.8 Integration check: under `cplt exec`, start `repo-warden --repo <scratch>` with the default backend, connect a real MCP stdio client, call all six tools plus one denied and one unknown tool, and confirm the audit JSONL has the expected records outside the repo. Record the result in the PR description.
+- [x] 4.8 Integration check: under `cplt exec`, start `repo-warden --repo <scratch>` with the default backend, connect a real MCP stdio client, call all six tools plus one denied and one unknown tool, and confirm the audit JSONL has the expected records outside the repo. Record the result in the PR description.
 - [ ] 4.9 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.

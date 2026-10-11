@@ -13,7 +13,8 @@ from .execution import ContainmentError, CpltBackend, DirectBackend, ExecutionBa
 from .handlers import default_registry
 from .mcp_server import build_server
 from .paths import SensitiveMatcher
-from .policy import PolicyError, PolicyGate, default_policy_path, load_policy
+from .policy import (PolicyError, PolicyGate, check_policy_protected, default_policy_path, load_policy,
+                     require_direct_authorised)
 from .repo import RepoError, open_repo
 
 DIRECT_WARNING = """\
@@ -38,6 +39,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 def make_backend(name: str, repo: str) -> ExecutionBackend:
     if name == "direct":
+        require_direct_authorised()
         print(DIRECT_WARNING, file=sys.stderr, flush=True)
         return DirectBackend(repo)
     return CpltBackend(repo)
@@ -48,6 +50,8 @@ async def run(args: argparse.Namespace) -> None:
     repo = await open_repo(args.repo, backend)
     try:
         loaded = load_policy(args.policy or default_policy_path(), repo.root)
+        if backend.name == "cplt":
+            check_policy_protected(loaded.path)
         auditor = Auditor.open(args.audit or default_audit_path(), repo, backend.name)
         try:
             registry = default_registry()
