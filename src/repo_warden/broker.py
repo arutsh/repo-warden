@@ -148,11 +148,13 @@ class Broker:
             outcome("error", "handler.exception", message=msg)
             return Result(False, error=msg, rule_id="handler.exception", call_id=call_id)
 
+        result_audit = {k.removeprefix("_"): data[k] for k in cap.result_audit_fields if k in data}
+        data = {k: v for k, v in data.items() if not k.startswith("_")}
         chars = _string_chars(data)
         if chars > cap_chars + ENVELOPE_CHARS:
             outcome("error", "output.cap_exceeded", result_bytes=chars)
             return Result(False, error="result exceeds the policy output cap", rule_id="output.cap_exceeded",
                           call_id=call_id)
         outcome("ok", decision.rule_id, result_bytes=data.get("bytes", chars),
-                truncated=bool(data.get("truncated", False)))
+                truncated=bool(data.get("truncated", False)), **result_audit)
         return Result(True, data=data, rule_id=decision.rule_id, call_id=call_id)

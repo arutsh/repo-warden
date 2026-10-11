@@ -44,6 +44,9 @@ class Capability:
     risk: Risk
     description: str
     audit_fields: tuple[str, ...]   # validated args copied into the audit record
+    # Result keys copied into the outcome audit record. A key starting with "_" is audit-only: it is
+    # removed from the result before the agent sees it, and recorded without the underscore.
+    result_audit_fields: tuple[str, ...] = ()
 
 
 class Registry:

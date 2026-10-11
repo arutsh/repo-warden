@@ -191,3 +191,21 @@ def test_file_used_as_directory_is_not_found(repo, repo_dir):
     (repo_dir / "README.md").write_text("x")
     with pytest.raises(FileNotFoundError):
         open_nofollow(repo, resolve(repo, "README.md/x", M))
+
+
+# --- nested repositories and worktrees (D7 step 6) ----------------------------------------------
+
+@pytest.mark.parametrize("kind", ["worktree", "submodule", "nested"])
+def test_path_in_nested_boundary_denied(repo, nested, kind):
+    denied(repo, f"{nested[kind]}/src/app.py", "path.nested_repo")
+    denied(repo, nested[kind], "path.nested_repo")  # the boundary directory itself
+
+
+def test_symlink_into_nested_repo_denied(repo, nested):
+    denied(repo, "lib/src/app.py", "path.nested_repo")
+    denied(repo, "lib", "path.nested_repo")
+
+
+def test_parent_of_nested_boundary_allowed(repo, nested):
+    assert resolve(repo, "vendor", M) == SafePath("vendor")
+    assert resolve(repo, ".claude/worktrees", M) == SafePath(".claude/worktrees")

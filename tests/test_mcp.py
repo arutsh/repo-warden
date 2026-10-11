@@ -22,8 +22,10 @@ async def test_list_tools(make_broker):
     client, _ = await connect(make_broker, POLICY_ALLOW)
     async with client:
         tools = (await client.list_tools()).tools
-    assert [t.name for t in tools] == ["filesystem_read"]
-    assert tools[0].input_schema["properties"]["path"]["type"] == "string"
+    assert [t.name for t in tools] == ["filesystem_read", "filesystem_list", "search_code"]
+    for tool in tools:
+        assert tool.input_schema["properties"]["path"]["type"] == "string"
+        assert tool.input_schema["additionalProperties"] is False
 
 
 async def test_successful_read(make_broker, repo_dir):

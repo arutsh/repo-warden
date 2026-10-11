@@ -53,6 +53,20 @@ async def test_allowed_call_writes_intent_and_outcome(make_broker):
     assert recs[1]["args"] == {"path": "src"}
 
 
+async def test_result_audit_fields(make_broker):
+    async def handler(ctx, inp):
+        return {"echo": inp.path, "kind": "k", "_hidden": 3, "_unlisted": 4}
+
+    c = Capability("t.read", EchoIn, handler, Risk.READ, "test", ("path",),
+                   result_audit_fields=("kind", "_hidden", "missing"))
+    broker, audit = make_broker(POLICY, [c])
+    res = await broker.execute("t.read", {"path": "src"})
+    assert res.ok and res.data == {"echo": "src", "kind": "k"}
+    out = [r for r in records(audit) if r["call_id"] == res.call_id][-1]
+    assert out["detail"]["kind"] == "k" and out["detail"]["hidden"] == 3
+    assert "unlisted" not in out["detail"] and "missing" not in out["detail"]
+
+
 async def test_unknown_capability_denied_and_audited(make_broker):
     broker, audit = make_broker(POLICY, CAPS)
     res = await broker.execute("shell.run", {"cmd": "id"})

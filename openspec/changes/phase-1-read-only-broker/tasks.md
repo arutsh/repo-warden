@@ -39,11 +39,11 @@
 
 ## 3. filesystem.list and search.code — depends on 1, 2
 
-- [ ] 3.1 Add the nested-boundary check (D7 step 6) to `paths.resolve`, which also covers the already-shipped `filesystem.read`. Verify with fixtures for a nested linked worktree, a submodule-style `.git` file, a nested `.git` directory and a symlink into one (all denied as `path.nested_repo`), and a test that `open_repo` accepts a linked worktree as `--repo` with its `.git` file denied.
-- [ ] 3.2 Implement `filesystem.list` (fd-based scandir, no symlink following, bounded depth and entries, hide `.git` and sensitive entries). Verify with tests that a root with `.git/`, `.env` and `src/` lists only `src/`, the entry limit truncates, a symlinked dir is reported as a link and not descended, and a nested worktree is listed but not descended.
-- [ ] 3.3 Implement `search.code` via ripgrep (`--no-config --json --no-follow`, sensitive `--glob` exclusions, no `--pre`/`-z`, literal by default) with post-filtering and caps. Verify with tests that a `.env` match is never returned, `.git` is never searched, the match limit truncates, a pattern like `$(id)` is treated literally, and a match inside a nested worktree is never returned.
-- [ ] 3.4 Implement the pure-Python fallback walker (selected when `rg` is missing) with the same exclusions, size and binary skips, and a deadline. Verify by running the 3.3 test cases parametrised over both engines with `rg` hidden from `PATH`.
-- [ ] 3.5 Add `filesystem.list` and `search.code` to the example policy and the README capability table with their limits. Verify that the MCP tool-list test now shows them.
+- [x] 3.1 Add the nested-boundary check (D7 step 6) to `paths.resolve`, which also covers the already-shipped `filesystem.read`. Verify with fixtures for a nested linked worktree, a submodule-style `.git` file, a nested `.git` directory and a symlink into one (all denied as `path.nested_repo`), and a test that `open_repo` accepts a linked worktree as `--repo` with its `.git` file denied.
+- [x] 3.2 Implement `filesystem.list` (fd-based scandir, no symlink following, bounded depth and entries, hide `.git` and sensitive entries). Verify with tests that a root with `.git/`, `.env` and `src/` lists only `src/`, the entry limit truncates, a symlinked dir is reported as a link and not descended, and a nested worktree is listed but not descended.
+- [x] 3.3 Implement `search.code` via ripgrep (`--no-config --json --no-follow`, sensitive `--glob` exclusions, no `--pre`/`-z`, literal by default) with post-filtering and caps. Verify with tests that a `.env` match is never returned, `.git` is never searched, the match limit truncates, a pattern like `$(id)` is treated literally, and a match inside a nested worktree is never returned.
+- [x] 3.4 Implement the pure-Python fallback walker (selected when `rg` is missing) with the same exclusions, size and binary skips, and a deadline. Verify by running the 3.3 test cases parametrised over both engines with `rg` hidden from `PATH`.
+- [x] 3.5 Add `filesystem.list` and `search.code` to the example policy and the README capability table with their limits. Verify that the MCP tool-list test now shows them.
 - [ ] 3.6 Run `uv run pytest` clean; PR merged.
 
 ## 4. Git capabilities, hostile-repo hardening and release docs — depends on 1, 2

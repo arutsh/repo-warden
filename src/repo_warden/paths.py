@@ -105,11 +105,34 @@ def resolve(ctx: RepoContext, rel: str, matcher: SensitiveMatcher) -> SafePath:
     rel_real = os.path.relpath(real, ctx.root)
     rel_real = "" if rel_real == "." else rel_real
     _check_rel(rel_real, matcher)
-    return SafePath(rel_real)
+    safe = SafePath(rel_real)
+    if nested_boundary(ctx, safe.parts) is not None:
+        raise PathDenied("path.nested_repo", "path is inside a nested repository or worktree")
+    return safe
 
 
-_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-_FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+def has_git_entry(dir_fd: int, rel_dir: str) -> bool:
+    """True if `rel_dir` (relative to `dir_fd`) holds a `.git` file, directory or link: a nested repo or worktree."""
+    try:
+        os.stat(f"{rel_dir}/.git", dir_fd=dir_fd, follow_symlinks=False)
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except PermissionError:
+        return False  # `rel_dir` can't be traversed, so nothing under it is reachable either
+    return True
+
+
+def nested_boundary(ctx: RepoContext, parts: list[str]) -> str | None:
+    """The first directory along `parts` (the target included, the root excluded) that is a nested repo."""
+    for i in range(1, len(parts) + 1):
+        prefix = "/".join(parts[:i])
+        if has_git_entry(ctx.root_fd, prefix):
+            return prefix
+    return None
+
+
+DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 
 
 def _is_symlink(name: str, dir_fd: int) -> bool:
@@ -130,7 +153,7 @@ def open_nofollow(ctx: RepoContext, safe: SafePath, *, directory: bool = False) 
     try:
         for i, name in enumerate(parts):
             last = i == len(parts) - 1
-            flags = _DIR_FLAGS if (not last or directory) else _FILE_FLAGS
+            flags = DIR_FLAGS if (not last or directory) else FILE_FLAGS
             try:
                 nfd = os.open(name, flags, dir_fd=fd)
             except OSError as e:

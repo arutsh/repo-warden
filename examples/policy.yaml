@@ -22,3 +22,7 @@ output:
 tools:
   filesystem.read:
     tiers: { local: L0 }
+  filesystem.list:
+    tiers: { local: L0 }
+  search.code:
+    tiers: { local: L0 }
