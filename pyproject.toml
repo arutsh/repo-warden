@@ -36,3 +36,6 @@ packages = ["src/repo_warden"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.uv.workspace]
+members = ["devkit"]
