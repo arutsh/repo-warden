@@ -383,6 +383,12 @@ Not in Phase 1:
 - `where` argument rules in the policy once mcp-airlock releases them (see
   [docs/upstream-gaps.md](docs/upstream-gaps.md)).
 
+## devkit
+
+This repository also holds [devkit](devkit/README.md). It is a separate, opt-in package of
+dev-workflow rules (secret files, comment style, …) that run as coding-agent hooks, git hooks and in
+CI. repo-warden does not depend on it.
+
 ## License
 
 MIT
