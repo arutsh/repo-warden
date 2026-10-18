@@ -7,12 +7,14 @@ import os
 import re
 import shlex
 import tempfile
-from dataclasses import dataclass
+import tomllib
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Callable
 
 from . import rules
-from .adapters import claude
+from .adapters import claude, codex
 
 HOOK_TIMEOUT_S = 15
 BACKUP_SUFFIX = ".devkit-backup"
@@ -28,23 +30,51 @@ class Agent:
     name: str
     config_path: Callable[[], Path]
     hooks: Callable[[str], dict[str, list[dict[str, Any]]]]  # devkit exe -> {event: [matcher group]}
+    on_install: str | None = None  # what the user must do next
+    warnings: Callable[[], list[str]] = field(default=lambda: [])  # problems that stop the hooks running
 
 
 def _claude_path() -> Path:
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "settings.json"
 
 
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def _codex_warnings() -> list[str]:
+    """Codex skips hooks.json when `[features] hooks` (or its old name `codex_hooks`) is false."""
+    path = _codex_home() / "config.toml"
+    try:
+        features = tomllib.loads(path.read_text(encoding="utf-8")).get("features", {})
+    except FileNotFoundError:
+        return []
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
+        return [f"cannot read {path} to check whether hooks are enabled ({e})"]
+    enabled = features.get("hooks", features.get("codex_hooks")) if isinstance(features, dict) else None
+    if enabled is False:
+        return [f"hooks are disabled in {path} ([features] hooks = false); Codex will not run devkit"]
+    return []
+
+
 def _command(exe: str, agent: str, event: str) -> dict[str, Any]:
     return {"type": "command", "command": f"{shlex.quote(exe)} hook {agent} {event}", "timeout": HOOK_TIMEOUT_S}
 
 
-def _claude_hooks(exe: str) -> dict[str, list[dict[str, Any]]]:
-    """Only the events some rule runs in: each registered hook is a process per tool call."""
-    return {hook_event: [{"matcher": matcher, "hooks": [_command(exe, "claude", name)]}]
-            for name, (hook_event, phase, matcher) in claude.HOOK_EVENTS.items() if rules.any_rule(phases=phase)}
+def _hooks(agent: str, adapter: ModuleType) -> Callable[[str], dict[str, list[dict[str, Any]]]]:
+    def hooks(exe: str) -> dict[str, list[dict[str, Any]]]:
+        """Only the events some rule runs in: each registered hook is a process per tool call."""
+        return {hook_event: [{"matcher": matcher, "hooks": [_command(exe, agent, name)]}]
+                for name, (hook_event, phase, matcher) in adapter.HOOK_EVENTS.items() if rules.any_rule(phases=phase)}
+    return hooks
 
 
-AGENTS: dict[str, Agent] = {"claude": Agent("claude", _claude_path, _claude_hooks)}
+AGENTS: dict[str, Agent] = {
+    "claude": Agent("claude", _claude_path, _hooks("claude", claude)),
+    "codex": Agent("codex", lambda: _codex_home() / "hooks.json", _hooks("codex", codex),
+                   on_install="review and trust the new hooks in Codex with /hooks; they don't run until you do",
+                   warnings=_codex_warnings),
+}
 
 
 def is_managed(hook: Any, agent: str) -> bool:
@@ -145,10 +175,12 @@ def install(agent: str, exe: str) -> str:
         if not isinstance(existing, list):
             raise InstallError(f"{path}: hooks.{event} is not a list; fix it first, nothing was changed")
         existing.extend(groups)
+    notes = [f"{agent}: warning: {w}" for w in target.warnings()]
     if new == data:
-        return f"{agent}: already installed in {path}"
+        return "\n".join([f"{agent}: already installed in {path}", *notes])
     write_json(path, new, original)
-    return f"{agent}: installed in {path}"
+    return "\n".join([f"{agent}: installed in {path}", *([f"{agent}: {target.on_install}"] if target.on_install else []),
+                      *notes])
 
 
 def uninstall(agent: str) -> str:

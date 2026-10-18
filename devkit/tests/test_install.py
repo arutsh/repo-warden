@@ -153,7 +153,7 @@ def test_claude_config_dir(monkeypatch, tmp_path):
 def test_unknown_agent_rejected(capsys):
     with pytest.raises(SystemExit):
         main(["install", "--agent", "cursor"])
-    assert "supported: claude" in capsys.readouterr().err
+    assert "supported: claude, codex" in capsys.readouterr().err
 
 
 def test_status_reports_install_state(settings, repo, monkeypatch, capsys):
@@ -190,3 +190,87 @@ def test_console_script_end_to_end(repo):
     stdin = json.dumps({"tool_name": "Bash", "tool_input": {"command": "cat .env"}, "cwd": str(repo)})
     res = subprocess.run([exe, "hook", "claude", "pre-tool-use"], input=stdin, capture_output=True, text=True)
     assert res.returncode == 0 and json.loads(res.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# --- Codex: the same guarantees in ~/.codex/hooks.json ---
+
+@pytest.fixture
+def codex_hooks(isolated):
+    return isolated / ".codex" / "hooks.json"
+
+
+CODEX_USER = {"hooks": {"PreToolUse": [{"matcher": "^Bash$", "hooks": [
+    {"type": "command", "command": "/usr/bin/python3 ~/.codex/hooks/policy.py", "statusMessage": "Checking"}]}]}}
+
+
+def test_codex_install_into_missing_file(codex_hooks):
+    msg = install.install("codex", EXE)
+    assert "installed" in msg and "/hooks" in msg
+    data = json.loads(codex_hooks.read_text())
+    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use"]
+    pre = data["hooks"]["PreToolUse"][0]
+    assert pre["matcher"] == "^(Bash|apply_patch)$" and pre["hooks"][0]["timeout"] == 15
+
+
+def test_codex_idempotent_backup_and_uninstall(codex_hooks):
+    codex_hooks.parent.mkdir()
+    codex_hooks.write_text(json.dumps(CODEX_USER))
+    install.install("codex", EXE)
+    first = codex_hooks.read_text()
+    assert "already installed" in install.install("codex", EXE) and codex_hooks.read_text() == first
+    data = json.loads(first)
+    assert data["hooks"]["PreToolUse"][0] == CODEX_USER["hooks"]["PreToolUse"][0] and len(devkit_entries(data)) == 1
+    assert "removed" in install.uninstall("codex")
+    assert json.loads(codex_hooks.read_text()) == CODEX_USER
+    install.install("codex", "/other/devkit")
+    assert json.loads(codex_hooks.with_name("hooks.json.devkit-backup").read_text()) == CODEX_USER
+
+
+def test_codex_invalid_json_refused_unchanged(codex_hooks):
+    codex_hooks.parent.mkdir()
+    codex_hooks.write_text("{oops")
+    assert main(["install", "--agent", "codex", "--exe", EXE]) == 1
+    assert codex_hooks.read_text() == "{oops"
+
+
+def test_agents_are_independent(settings, codex_hooks):
+    main(["install", "--agent", "claude,codex", "--exe", EXE])
+    install.uninstall("claude")
+    assert not install.installed("claude") and install.installed("codex")
+    assert devkit_entries(json.loads(codex_hooks.read_text())) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use"]
+
+
+def test_codex_post_hook_when_a_rule_runs_post(codex_hooks, stub_rules):
+    stub_rules("p", guard=True, phases={"post"})
+    install.install("codex", EXE)
+    post = json.loads(codex_hooks.read_text())["hooks"]["PostToolUse"][0]
+    assert post["matcher"] == "^apply_patch$" and post["hooks"][0]["command"].endswith("hook codex post-tool-use")
+
+
+@pytest.mark.parametrize("toml,warned", [
+    ("[features]\nhooks = false\n", True),
+    ("[features]\ncodex_hooks = false\n", True),
+    ("[features]\nhooks = true\ncodex_hooks = false\n", False),
+    ("model = 'gpt-5'\n", False),
+    ("[features\n", True),  # unreadable: say we could not check
+])
+def test_codex_hooks_disabled_warning(isolated, toml, warned):
+    (isolated / ".codex").mkdir()
+    (isolated / ".codex" / "config.toml").write_text(toml)
+    assert ("warning:" in install.install("codex", EXE)) is warned
+    assert ("warning:" in install.install("codex", EXE)) is warned  # also when already installed
+
+
+def test_codex_status_shows_warning(isolated, repo, monkeypatch, capsys):
+    (isolated / ".codex").mkdir()
+    (isolated / ".codex" / "config.toml").write_text("[features]\nhooks = false\n")
+    monkeypatch.chdir(repo)
+    main(["status"])
+    out = capsys.readouterr().out
+    assert "codex    not installed" in out and "hooks are disabled" in out
+
+
+def test_codex_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "cx"))
+    install.install("codex", EXE)
+    assert (tmp_path / "cx" / "hooks.json").is_file()
