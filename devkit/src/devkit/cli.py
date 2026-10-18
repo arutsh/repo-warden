@@ -96,6 +96,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     for agent, target in install.AGENTS.items():
         state = "installed" if install.installed(agent) else "not installed"
         print(f"  {agent:<8} {state}  ({target.config_path()})")
+        for warning in target.warnings():
+            print(f"    warning: {warning}")
     return 0
 
 

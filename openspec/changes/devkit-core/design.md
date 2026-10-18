@@ -113,8 +113,13 @@ File content (before/after) is read from disk only when a registered rule sets `
 - **Update** reads the file, locates each hunk by its context and removed lines in order, and applies it to get the after-content; the result is an edit event. If a hunk can't be located, the event falls back to before = the hunk's old side and after = the hunk's new side. comment_brevity's "introduced" comparison still works on those fragments.
 - **Move** is judged for `secrets` on both paths.
 - **Delete** becomes a shell-like path reference for `secrets` only.
+- **An envelope that doesn't parse** becomes a shell event over the whole text, so `secrets` still sees the file names. The envelope is found anywhere in `tool_input.command`, which covers a heredoc around it.
 
-Output uses the same JSON as Claude. Install writes PreToolUse with matcher `^(Bash|apply_patch)$` and PostToolUse with `^apply_patch$` to `~/.codex/hooks.json`. It warns when `~/.codex/config.toml` has `[features] hooks = false` (read with `tomllib`; nothing is written to the TOML).
+Output uses the same JSON as Claude. Install writes these entries to `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`):
+- PreToolUse with matcher `^(Bash|apply_patch)$`;
+- PostToolUse with `^apply_patch$`, under the same condition as for Claude (D5).
+
+Install and `devkit status` warn when `config.toml` has `[features] hooks = false`, or the deprecated `codex_hooks = false`. The file is read with `tomllib`; nothing is written to the TOML.
 
 ### D7. Installer safety
 - **Recognising devkit entries:** an entry is devkit's when its `command` starts with the absolute devkit path followed by ` hook <agent>`, or matches the regex `/devkit hook (claude|codex) ` to catch stale paths after a reinstall.

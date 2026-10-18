@@ -3,13 +3,13 @@
 devkit applies one set of dev-workflow rules across all your repos and coding agents. The rules
 cover things like not reading secret files and keeping code comments short. The same rule code runs as:
 
-- an **agent hook** in Claude Code (Codex CLI coming next);
+- an **agent hook** in Claude Code and OpenAI Codex CLI;
 - a **git pre-commit hook** and a **CI check** (coming in a later group).
 
 devkit is a separate package that lives in the repo-warden repository. repo-warden (the broker) does not depend on it,
 and installing repo-warden installs nothing from devkit. Everything is opt-in.
 
-> Status: group 1 of `devkit-core`. One rule (`secrets`) and the Claude Code adapter.
+> Status: groups 1–2 of `devkit-core`. One rule (`secrets`), and the Claude Code and Codex CLI adapters.
 
 ## Not a security boundary
 
@@ -31,6 +31,7 @@ The layers that enforce are:
 ```sh
 uv tool install ./devkit                 # from a repo-warden checkout; adds `devkit` to ~/.local/bin
 devkit install --agent claude            # registers the hooks in ~/.claude/settings.json
+devkit install --agent codex             # registers the hooks in ~/.codex/hooks.json
 devkit status                            # what applies here and why
 ```
 
@@ -38,18 +39,25 @@ For development, use `uv tool install --editable ./devkit`, or `uv run devkit ..
 
 `devkit install` writes the absolute path of the `devkit` it was run as. It changes only its own
 entries: your other hooks, permissions and settings are kept. It writes atomically, keeps the
-original file as `settings.json.devkit-backup` the first time, and refuses to touch a file
+original file as `<file>.devkit-backup` (for example `settings.json.devkit-backup`) the first time, and refuses to touch a file
 that isn't valid JSON. Running it again changes nothing. Claude Code reads hooks at start-up, so
 restart open sessions (or check them with `/hooks`).
 
-If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json`.
+If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json`. If `CODEX_HOME`
+is set, it uses `$CODEX_HOME/hooks.json`.
+
+**Codex only runs hooks you have trusted.** After `devkit install --agent codex`, open Codex and run
+`/hooks` to review and trust the devkit entries. Until you do, Codex skips them. Trust is tied to
+the hook's content, so you need to trust again after a reinstall that changes the devkit path.
+`devkit install` and `devkit status` warn if Codex's `config.toml` (in `~/.codex` or `$CODEX_HOME`) turns hooks off with
+`[features] hooks = false`.
 
 ## Opting in and out
 
 | Level | In | Out |
 |---|---|---|
 | Package | `uv tool install ./devkit` | `uv tool uninstall repo-warden-devkit` |
-| Agent | `devkit install --agent claude` | `devkit uninstall --agent claude` |
+| Agent | `devkit install --agent claude,codex` | `devkit uninstall --agent claude,codex` |
 | Repo | add `.devkit.yaml` at the repo's top level (or set `repos: all`) | delete it |
 | Rule | `level: warn` or `block` | `level: off` |
 
@@ -121,6 +129,30 @@ sandbox and repo-warden cover that case.
 A block is returned as a PreToolUse `deny` with the reason. A warning is returned as a
 `systemMessage` plus `additionalContext`. devkit never answers `allow`, because that would skip your
 own permission prompts.
+
+## Codex CLI mapping
+
+| Codex tool | devkit event |
+|---|---|
+| `Bash` | shell command (an argv list is joined first) |
+| `apply_patch`, `*** Add File` | write |
+| `apply_patch`, `*** Update File` | edit: the patch is applied in memory to the file on disk |
+| `apply_patch`, `*** Move to` | edit at the new path; `secrets` also checks the old path |
+| `apply_patch`, `*** Delete File` | no content; `secrets` checks the path |
+
+If an update's context lines don't match the file on disk, rules see the hunks' own old and new
+lines instead. If the patch can't be parsed at all, `secrets` still checks the file names in its
+text. Codex can't read files except through `Bash`, so there is no separate read event.
+
+devkit registers PreToolUse for `^(Bash|apply_patch)$`. Output is the same JSON as for Claude Code:
+a PreToolUse `deny` with the reason, or `additionalContext` for a warning, and never `allow`.
+
+## PostToolUse
+
+devkit registers a PostToolUse hook (Claude `Write|Edit|MultiEdit`, Codex `^apply_patch$`) only
+when a rule runs after the tool. The `secrets` rule doesn't, so today only PreToolUse is
+installed. Each registered hook starts a process on every matching tool call. When a later version
+adds such a rule, run `devkit install` again.
 
 ## Development
 

@@ -7,7 +7,14 @@ import stat
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
-AGENTS = {"claude": "devkit.adapters.claude"}
+AGENTS = {"claude": "devkit.adapters.claude", "codex": "devkit.adapters.codex"}
+
+
+def resolve(path: str | None, cwd: str | None) -> str | None:
+    """`path` made absolute against the hook's cwd, where it is relative."""
+    if not path:
+        return None
+    return path if os.path.isabs(path) or not cwd else os.path.join(cwd, path)
 
 
 def read_text(path: str) -> str:
