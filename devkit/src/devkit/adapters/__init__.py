@@ -10,6 +10,13 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 AGENTS = {"claude": "devkit.adapters.claude", "codex": "devkit.adapters.codex"}
 
 
+def needs_content(event) -> bool:
+    """Whether a rule enabled for this write/edit event's repo reads file text (loads the config)."""
+    from ..engine import needs_content as engine_needs_content
+
+    return engine_needs_content(event)
+
+
 def resolve(path: str | None, cwd: str | None) -> str | None:
     """`path` made absolute against the hook's cwd, where it is relative."""
     if not path:

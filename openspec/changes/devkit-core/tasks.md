@@ -52,11 +52,11 @@
 
 ## 3. Style rules: comment_brevity, test_factories, branch_name — depends on 1 (2 for Codex coverage)
 
-- [ ] 3.1 Port `comment_brevity` from GrandFlow (tokenizer and AST for Python, a pattern fallback, only "introduced" violations counted, configurable `max_lines`). Verify with tests for every spec scenario, plus a file that fails to parse using the fallback and an Alembic migration header skipped.
-- [ ] 3.2 Port `test_factories` (factory discovery in the nearest `tests/factories/`, configurable `discouraged_calls`, `block` treated as `warn`, post phase only). Verify with tests for raw construction with a factory present, no factories directory, a discouraged call, and that it never blocks.
-- [ ] 3.3 Implement `branch_name` (configurable `pattern` and `base`, the GrandFlow regex for detecting branch creation, flags ignored). Verify with tests for `git switch -c tmp` flagged, a conforming name allowed, `git branch -d old` ignored, and `main` accepted.
-- [ ] 3.4 Run each style rule through both adapters. Verify with payload tests that a Claude `Edit` and a Codex `apply_patch` adding the same four-line comment produce the same finding, and that `test_factories` warns from PostToolUse in both.
-- [ ] 3.5 Document each rule and its settings in the devkit README. Verify that the README's example config loads without errors through `devkit status`.
+- [x] 3.1 Port `comment_brevity` from GrandFlow (tokenizer and AST for Python, a pattern fallback, only "introduced" violations counted, configurable `max_lines`). Verify with tests for every spec scenario, plus a file that fails to parse using the fallback and an Alembic migration header skipped.
+- [x] 3.2 Port `test_factories` (factory discovery in the nearest `tests/factories/`, configurable `discouraged_calls`, `block` treated as `warn`, post phase only). Verify with tests for raw construction with a factory present, no factories directory, a discouraged call, and that it never blocks.
+- [x] 3.3 Implement `branch_name` (configurable `pattern` and `base`, the GrandFlow regex for detecting branch creation, flags ignored). Verify with tests for `git switch -c tmp` flagged, a conforming name allowed, `git branch -d old` ignored, and `main` accepted.
+- [x] 3.4 Run each style rule through both adapters. Verify with payload tests that a Claude `Edit` and a Codex `apply_patch` adding the same four-line comment produce the same finding, and that `test_factories` warns from PostToolUse in both.
+- [x] 3.5 Document each rule and its settings in the devkit README. Verify that the README's example config loads without errors through `devkit status`.
 - [ ] 3.6 Run the devkit and root test suites clean; PR merged.
 
 ## 4. Repo checks and opting repos in — depends on 1, 3

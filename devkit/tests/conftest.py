@@ -43,6 +43,13 @@ def repo(tmp_path) -> Path:
 
 
 @pytest.fixture
+def secrets_only(monkeypatch):
+    """Only the `secrets` rule registered: no rule reads file content or runs after the tool."""
+    for name in [n for n in rules.REGISTRY if n != "secrets"]:  # in place: config.py holds the same dict
+        monkeypatch.delitem(rules.REGISTRY, name)
+
+
+@pytest.fixture
 def stub_rules(monkeypatch):
     """Register stub rules: register(name, findings=..., guard=..., default=...) -> the Rule instance."""
 

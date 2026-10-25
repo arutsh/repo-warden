@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..events import Event, Outcome, Phase
-from ..rules import any_rule
-from . import read_text
+from . import needs_content, read_text
 from . import resolve as _abs
 
 PRE_MATCHER = "Bash|Read|Grep|Glob|Write|Edit|MultiEdit"
@@ -21,7 +20,7 @@ def _replace(text: str, old: str, new: str, replace_all: bool) -> str | None:
 
 
 def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None) -> list[Event]:
-    """content: load file text for write/edit events; by default only when some rule reads it."""
+    """content: load file text for write/edit events; by default only when an enabled rule reads it."""
     tool = payload.get("tool_name")
     ti = payload.get("tool_input") or {}
     cwd = payload.get("cwd") or None
@@ -38,8 +37,9 @@ def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None
     path = _abs(ti.get("file_path"), cwd)
     if not path:
         return []
-    if not (any_rule(content=True) if content is None else content):
-        return [Event("write" if tool == "Write" and phase != "post" else "edit", phase, path=path, cwd=cwd)]
+    bare = Event("write" if tool == "Write" and phase != "post" else "edit", phase, path=path, cwd=cwd)
+    if not (needs_content(bare) if content is None else content):
+        return [bare]
     on_disk = read_text(path)
     if phase == "post":  # the tool has run: what's on disk is the result
         return [Event("edit", phase, path=path, after=on_disk, cwd=cwd)]
@@ -51,7 +51,7 @@ def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None
         replaced = _replace(after, e.get("old_string") or "", e.get("new_string") or "", bool(e.get("replace_all")))
         if replaced is None:  # can't place the edit: judge the new text on its own, as GrandFlow did
             before, after = "", "\n".join(x.get("new_string") or "" for x in edits)
-            break
+            return [Event("edit", phase, path=path, before=before, after=after, cwd=cwd, fragment=True)]
         after = replaced
     return [Event("edit", phase, path=path, before=before, after=after, cwd=cwd)]
 

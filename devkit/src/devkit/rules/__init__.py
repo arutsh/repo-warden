@@ -10,6 +10,9 @@ from ..events import Event, Finding, Level
 
 REGISTRY: dict[str, str] = {
     "secrets": "devkit.rules.secrets",
+    "comment_brevity": "devkit.rules.comment_brevity",
+    "test_factories": "devkit.rules.test_factories",
+    "branch_name": "devkit.rules.branch_name",
 }
 
 
@@ -25,6 +28,10 @@ class Rule:
     extend: ClassVar[frozenset[str]] = frozenset()  # list settings each layer adds to instead of replacing
     repo_settings: ClassVar[frozenset[str] | None] = None  # for guard rules: settings the repo may set
 
+    def validate(self, key: str, value: Any) -> str | None:
+        """A problem with a setting's value beyond its type, or None; reported as a config error."""
+        return None
+
     def check(self, event: Event, settings: Mapping[str, Any]) -> list[Finding]:
         raise NotImplementedError
 
@@ -33,7 +40,7 @@ def get_rule(name: str) -> Rule:
     return importlib.import_module(REGISTRY[name]).RULE
 
 
-def any_rule(*, phases: str | None = None, content: bool | None = None) -> bool:
+def any_rule(*, phases: str | None = None, content: bool | None = None) -> bool:  # registry-wide, for install
     """Whether some registered rule runs in `phases` and/or needs file content."""
     return any((phases is None or phases in r.phases) and (content is None or r.content == content)
                for r in map(get_rule, REGISTRY))

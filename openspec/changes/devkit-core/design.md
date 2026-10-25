@@ -105,7 +105,9 @@ Install writes:
 - PostToolUse with matcher `Write|Edit|MultiEdit`, only when a registered rule runs in the `post` phase (each hook is a process per tool call; re-run install after adding such a rule);
 - timeout 15s.
 
-File content (before/after) is read from disk only when a registered rule sets `content = True`; otherwise write and edit events carry just the path.
+File content (before/after) is read from disk only when a rule that reads it (`content = True`) is enabled for the event's repo by the effective config: level not `off`, and in scope for style rules. Otherwise write and edit events carry just the path. Hook registration still depends on the registered rules, not the config, so changing the config never needs a reinstall.
+
+If an edit can't be placed in the file (a Claude `old_string` not found, a stale Codex hunk), the event is marked `fragment`. Rules then judge only the edit's own text, and line numbers in findings are left out because they wouldn't be the file's.
 
 ### D6. Codex adapter and apply_patch
 `patch.py` parses the envelope: `*** Begin Patch`, then `*** Add File:`, `*** Update File:` (with an optional `*** Move to:`), `*** Delete File:`, hunks starting with `@@`, and the end marker. Each part is turned into events:

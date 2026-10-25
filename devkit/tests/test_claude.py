@@ -127,7 +127,7 @@ def test_fifo_does_not_hang(repo):
     assert ev.before == ""
 
 
-def test_file_content_not_read_unless_a_rule_needs_it(repo, stub_rules):
+def test_file_content_not_read_unless_a_rule_needs_it(repo, secrets_only, stub_rules):
     f = repo / "a.py"
     f.write_text("old\n")
     (ev,) = claude.events(json.loads(payload("Write", str(repo), file_path=str(f), content="new\n")), "pre")

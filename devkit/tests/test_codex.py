@@ -108,7 +108,7 @@ def test_post_phase_reads_the_result(repo):
     assert [(e.kind, e.after) for e in ev if e.kind == "edit"] == [("edit", "after\n")]
 
 
-def test_content_not_read_unless_a_rule_needs_it(repo):
+def test_content_not_read_unless_a_rule_needs_it(repo, secrets_only):
     (repo / "app.py").write_text("x\n")
     ev = codex.events(json.loads(payload("apply_patch", str(repo), envelope("*** Update File: app.py", "-x", "+y"))),
                       "pre")
