@@ -74,6 +74,6 @@
   - uninstall removing only the managed hook.
 - [x] 4.3 Implement `devkit init` with `--agents-md`, `--openspec` and `--ci`, plus the templates (`devkit.yaml`, `AGENTS.md`, `openspec-rules.yaml`, `devkit-ci.yml`). Verify with tests for every repo-checks `init` scenario (no overwrites, `CLAUDE.md` with `@AGENTS.md`, rules only appended when none exist), and that the generated workflow is valid YAML.
 - [x] 4.4 Document check, git hooks, init and the GrandFlow migration steps (design "Migration Plan") in the devkit README. Verify by opting repo-warden itself in (`devkit init`, `devkit install --git-hooks`): a commit that adds a four-line comment is refused, and `devkit status` shows the repo as opted in.
-- [ ] 4.5 Run the devkit and root test suites clean, and `devkit check --range origin/main..HEAD` clean on the branch; PR merged.
+- [x] 4.5 Run the devkit and root test suites clean, and `devkit check --range origin/main..HEAD` clean on the branch; PR merged.
 
   > **Follow-up (2026-10-25):** the group 4 review found that `secrets` matches every component of a file event's absolute path, so the folder a repo is cloned into counts. A clone at `~/id_projects/app` makes every file match `id_*`. The spec says matching is on the basename. The user chose to use devkit in practice first and fix this later, as a separate patch. The options are to match only the repo-relative part (recommended) or only the basename. Shell commands are unaffected either way. The devkit README lists this as a known limitation.
