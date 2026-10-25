@@ -152,6 +152,13 @@ For each event, the engine:
 
 If an event has no repo (a path outside any git tree), only user-level config applies, and only guard rules run unless `repos: all`.
 
+### D11. self_guard: the agent can't switch devkit off casually
+A manual test showed the gap: asked to, the agent ran `devkit uninstall --agent claude` and removed its own hooks. That is the same bypass the "no environment variable" decision (D4) exists to prevent. `self_guard` is a guard rule (default `block`, no settings, so a repo can only raise its level). It flags:
+- shell commands that run `devkit uninstall`, matched like the installer recognises its own commands (`devkit` or `devkit.exe` as a word, followed by `uninstall`);
+- writes and edits to the user config and to each agent's hook file. The paths come from the same functions `config` and `install` use, and are compared after resolving symlinks.
+
+Reads and `devkit install`/`status` are not flagged. The user switches devkit off from their own terminal. Like D9, this is string matching: `python -m devkit.cli uninstall` or a `sed` on the file gets past it. A hard lock belongs in the agent's permissions (for example, a Claude Code deny rule for `Bash(devkit uninstall*)`).
+
 ## Risks / Trade-offs
 
 - [Agents change hook formats; Codex hooks are recent] → Adapters are small, and their tests use recorded payload fixtures. `devkit status` prints the detected agent versions where it can. A format drift fails open with a warning, not by blocking.

@@ -67,7 +67,8 @@ Style rules (`comment_brevity`, `test_factories`, `branch_name`) run only in opt
 user config sets `repos: all`.
 
 There is deliberately **no environment variable** that switches devkit off. The agent could set it
-for its own commands. To switch devkit off, use the user config or `devkit uninstall`.
+for its own commands. To switch devkit off, use the user config or `devkit uninstall`. The `self_guard` rule
+stops the agent doing either of those for you.
 
 ## Configuration
 
@@ -127,6 +128,23 @@ sandbox and repo-warden cover that case.
 |---|---|---|
 | `patterns` | `[]` | added to the defaults; the repo config can add patterns too |
 | `exempt` | `[]` | basenames never treated as secret, e.g. `.env.example`; user config only |
+
+### `self_guard` (guard, default `block`)
+
+Stops the agent switching devkit off. It refuses:
+
+- a shell command that runs `devkit uninstall`;
+- a write or edit to the devkit user config, Claude Code's `settings.json` or Codex's `hooks.json`.
+  These are the paths devkit itself uses, so `XDG_CONFIG_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
+  are honoured, and symlinks are resolved.
+
+Reading those files, `devkit status` and `devkit install` are fine. To uninstall devkit or change
+its config, do it yourself from your own terminal. The rule has no settings, and a repo can't turn
+it off.
+
+Like `secrets`, this is string matching. A command that doesn't spell out `devkit uninstall`, such as
+`python -m devkit.cli uninstall` or a `sed` on the file, gets past it. For a hard lock, add a deny
+rule to Claude Code's own permissions, for example `"deny": ["Bash(devkit uninstall*)"]`.
 
 ### `comment_brevity` (style, default `block`)
 

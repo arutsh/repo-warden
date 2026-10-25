@@ -10,6 +10,7 @@ from ..events import Event, Finding, Level
 
 REGISTRY: dict[str, str] = {
     "secrets": "devkit.rules.secrets",
+    "self_guard": "devkit.rules.self_guard",
     "comment_brevity": "devkit.rules.comment_brevity",
     "test_factories": "devkit.rules.test_factories",
     "branch_name": "devkit.rules.branch_name",

@@ -66,6 +66,27 @@ In a shell command, a reference SHALL be detected as a separate word or a path c
 - **WHEN** the user config exempts `.env.example` and the agent reads `.env.example`
 - **THEN** there is no finding
 
+### Requirement: self_guard rule
+The `self_guard` rule is a guard rule and SHALL default to `block`. It SHALL report a finding when the agent tries to switch devkit off, which means either of these:
+- a shell command that runs `devkit uninstall`;
+- a file write or edit to a file devkit relies on: the user config (`~/.config/devkit/config.yaml`, honouring `XDG_CONFIG_HOME`), or the agent hook files devkit installs to (Claude Code's `settings.json` and Codex's `hooks.json`, honouring `CLAUDE_CONFIG_DIR` and `CODEX_HOME`).
+
+Paths SHALL be compared after resolving symlinks. Reading these files, `devkit status` and `devkit install` SHALL NOT be reported. The rule has no settings, so a repo can only raise its level. The reason SHALL tell the agent to ask the user to make the change themselves.
+
+Like `secrets`, this is early feedback and not a security boundary: a command that doesn't spell out `devkit uninstall` gets past it.
+
+#### Scenario: Agent uninstalls devkit
+- **WHEN** the agent runs `devkit uninstall --agent claude`
+- **THEN** the command gets a `self_guard` finding
+
+#### Scenario: Agent edits a hook file
+- **WHEN** the agent's write or edit targets `~/.claude/settings.json` or the devkit user config
+- **THEN** it gets a `self_guard` finding
+
+#### Scenario: Status and reads allowed
+- **WHEN** the agent runs `devkit status` or reads `~/.claude/settings.json`
+- **THEN** there is no finding
+
 ### Requirement: comment_brevity rule
 The `comment_brevity` rule SHALL default to `block`. It SHALL report a finding when a write or edit introduces one of the following, in a file whose type it knows (Python, shell, YAML, Ruby, and C-family and JS/TS sources):
 - a run of three or more consecutive line comments of the same style;
