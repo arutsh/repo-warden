@@ -27,7 +27,8 @@ def one_run():
         _configs.reset(token)
 
 
-def _load(top: Path | None, *, strict: bool, user_path: Path | None = None) -> config_mod.Config:
+def load_config(top: Path | None, *, strict: bool, user_path: Path | None = None) -> config_mod.Config:
+    """config.load, cached inside `one_run`."""
     cache = _configs.get()
     if cache is None:
         return config_mod.load(top, strict=strict, user_path=user_path)
@@ -57,9 +58,9 @@ def _active(cfg: config_mod.Config, event: Event) -> Iterator[tuple[Rule, config
         yield rule, rc
 
 
-def needs_content(event: Event) -> bool:
+def needs_content(event: Event, *, strict: bool = False) -> bool:
     """Whether a rule enabled for this event's repo reads its before/after text, so the adapter must load it."""
-    return any(rule.content for rule, _ in _active(_load(event_top(event), strict=False), event))
+    return any(rule.content for rule, _ in _active(load_config(event_top(event), strict=strict), event))
 
 
 def evaluate(events: Iterable[Event], *, strict: bool = False, user_path: Path | None = None) -> Outcome:
@@ -68,7 +69,7 @@ def evaluate(events: Iterable[Event], *, strict: bool = False, user_path: Path |
     for event in events:
         top = event_top(event)
         if top not in configs:
-            configs[top] = cfg = _load(top, strict=strict, user_path=user_path)
+            configs[top] = cfg = load_config(top, strict=strict, user_path=user_path)
             out.notes += [f"devkit: ignored invalid config {e}" for e in cfg.errors
                           if f"devkit: ignored invalid config {e}" not in out.notes]
         for rule, rc in _active(configs[top], event):

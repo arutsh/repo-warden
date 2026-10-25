@@ -1,0 +1,10 @@
+# devkit repo config: this file opts the repo in to devkit's style rules.
+# `devkit status` shows the effective settings; the devkit README documents each rule.
+rules:
+  comment_brevity: { level: block, max_lines: 2 }
+
+  # test_factories: { level: warn, discouraged_calls: [make_valid_user] }
+  # branch_name: { level: block, pattern: '^(feat|fix|chore)/.+$', base: main }
+
+  # Guard rules can only be tightened here: raise the level or add secret patterns.
+  # secrets: { patterns: ['*.tfvars'] }
