@@ -29,7 +29,7 @@ def devkit_entries(data):
 def test_install_into_missing_file(settings):
     assert "installed" in install.install("claude", EXE)
     data = json.loads(settings.read_text())
-    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook claude pre-tool-use"]
+    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook claude pre-tool-use", "'/opt/dev kit/bin/devkit' hook claude post-tool-use"]
     pre = data["hooks"]["PreToolUse"][0]
     assert pre["matcher"] == "Bash|Read|Grep|Glob|Write|Edit|MultiEdit" and pre["hooks"][0]["timeout"] == 15
     assert not settings.with_name("settings.json.devkit-backup").exists()
@@ -47,7 +47,7 @@ def test_idempotent_and_preserves_user_settings(settings):
     data = json.loads(first)
     assert data["permissions"] == USER_SETTINGS["permissions"] and data["model"] == "opus"
     assert data["hooks"]["PreToolUse"][0] == USER_HOOK and data["hooks"]["Stop"] == USER_SETTINGS["hooks"]["Stop"]
-    assert len(devkit_entries(data)) == 1
+    assert len(devkit_entries(data)) == 2
     assert oct(settings.stat().st_mode & 0o777) == "0o640"
 
 
@@ -64,7 +64,8 @@ def test_backup_written_once(settings):
 def test_reinstall_with_new_path_replaces_entries(settings):
     install.install("claude", EXE)
     install.install("claude", "/new/devkit")
-    assert devkit_entries(json.loads(settings.read_text())) == ["/new/devkit hook claude pre-tool-use"]
+    assert devkit_entries(json.loads(settings.read_text())) == ["/new/devkit hook claude pre-tool-use",
+                                                                "/new/devkit hook claude post-tool-use"]
 
 
 def test_uninstall_keeps_user_hooks(settings):
@@ -110,7 +111,7 @@ def test_symlinked_settings_written_through(settings, tmp_path):
     settings.parent.mkdir()
     settings.symlink_to(real)
     install.install("claude", EXE)
-    assert settings.is_symlink() and len(devkit_entries(json.loads(real.read_text()))) == 1
+    assert settings.is_symlink() and len(devkit_entries(json.loads(real.read_text()))) == 2
     assert settings.with_name("settings.json.devkit-backup").is_file()
 
 
@@ -207,7 +208,7 @@ def test_codex_install_into_missing_file(codex_hooks):
     msg = install.install("codex", EXE)
     assert "installed" in msg and "/hooks" in msg
     data = json.loads(codex_hooks.read_text())
-    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use"]
+    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use", "'/opt/dev kit/bin/devkit' hook codex post-tool-use"]
     pre = data["hooks"]["PreToolUse"][0]
     assert pre["matcher"] == "^(Bash|apply_patch)$" and pre["hooks"][0]["timeout"] == 15
 
@@ -219,7 +220,7 @@ def test_codex_idempotent_backup_and_uninstall(codex_hooks):
     first = codex_hooks.read_text()
     assert "already installed" in install.install("codex", EXE) and codex_hooks.read_text() == first
     data = json.loads(first)
-    assert data["hooks"]["PreToolUse"][0] == CODEX_USER["hooks"]["PreToolUse"][0] and len(devkit_entries(data)) == 1
+    assert data["hooks"]["PreToolUse"][0] == CODEX_USER["hooks"]["PreToolUse"][0] and len(devkit_entries(data)) == 2
     assert "removed" in install.uninstall("codex")
     assert json.loads(codex_hooks.read_text()) == CODEX_USER
     install.install("codex", "/other/devkit")
@@ -237,7 +238,7 @@ def test_agents_are_independent(settings, codex_hooks):
     main(["install", "--agent", "claude,codex", "--exe", EXE])
     install.uninstall("claude")
     assert not install.installed("claude") and install.installed("codex")
-    assert devkit_entries(json.loads(codex_hooks.read_text())) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use"]
+    assert devkit_entries(json.loads(codex_hooks.read_text())) == ["'/opt/dev kit/bin/devkit' hook codex pre-tool-use", "'/opt/dev kit/bin/devkit' hook codex post-tool-use"]
 
 
 def test_codex_post_hook_when_a_rule_runs_post(codex_hooks, stub_rules):

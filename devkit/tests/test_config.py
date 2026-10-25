@@ -117,3 +117,20 @@ def test_user_config_path_follows_xdg(monkeypatch, tmp_path):
     assert config.user_config_path() == tmp_path / "x" / "devkit" / "config.yaml"
     monkeypatch.delenv("XDG_CONFIG_HOME")
     assert config.user_config_path().parts[-3:] == (".config", "devkit", "config.yaml")
+
+
+def test_readme_example_configs_load(repo, user_config, monkeypatch, capsys):
+    """The README's example user and repo configs are valid as documented."""
+    import re
+    from pathlib import Path
+
+    from devkit.cli import main
+
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    blocks = re.findall(r"```yaml\n(.*?)```", readme, re.S)
+    user_config(next(b for b in blocks if b.startswith("# ~/.config/devkit/config.yaml")))
+    (repo / ".devkit.yaml").write_text(next(b for b in blocks if b.startswith("# <repo>/.devkit.yaml")))
+    monkeypatch.chdir(repo)
+    assert main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "ignored settings" not in out and "branch_name      block  (repo: .devkit.yaml)" in out

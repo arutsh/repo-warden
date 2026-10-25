@@ -9,7 +9,14 @@ cover things like not reading secret files and keeping code comments short. The 
 devkit is a separate package that lives in the repo-warden repository. repo-warden (the broker) does not depend on it,
 and installing repo-warden installs nothing from devkit. Everything is opt-in.
 
-> Status: groups 1–2 of `devkit-core`. One rule (`secrets`), and the Claude Code and Codex CLI adapters.
+> Status: groups 1–3 of `devkit-core`. Five rules (`secrets`, `self_guard`, `comment_brevity`,
+> `test_factories`, `branch_name`), and the Claude Code and Codex CLI adapters.
+
+> [!WARNING]
+> **CODEX CLI SUPPORT IS INCOMPLETE.** The Codex adapter has never been run against a real
+> Codex session, only against Codex's documented hook format. Some protections that work in
+> Claude Code don't work in Codex yet. See [Codex: known gaps](#codex-known-gaps). Use Claude
+> Code if you need devkit's rules to hold.
 
 ## Not a security boundary
 
@@ -61,11 +68,13 @@ the hook's content, so you need to trust again after a reinstall that changes th
 | Repo | add `.devkit.yaml` at the repo's top level (or set `repos: all`) | delete it |
 | Rule | `level: warn` or `block` | `level: off` |
 
-Guard rules (`secrets`) run in every repo, and outside repos too, once the agent hook is installed.
-Style rules (from a later group) run only in opted-in repos, unless the user config sets `repos: all`.
+Guard rules (`secrets`, `self_guard`) run in every repo, and outside repos too, once the agent hook is installed.
+Style rules (`comment_brevity`, `test_factories`, `branch_name`) run only in opted-in repos, unless the
+user config sets `repos: all`.
 
 There is deliberately **no environment variable** that switches devkit off. The agent could set it
-for its own commands. To switch devkit off, use the user config or `devkit uninstall`.
+for its own commands. To switch devkit off, use the user config or `devkit uninstall`. The `self_guard` rule
+stops the agent doing either of those for you.
 
 ## Configuration
 
@@ -83,6 +92,7 @@ rules:
     level: block           # off | warn | block; a bare level is shorthand: `secrets: block`
     patterns: ['*.tfvars', '.devrc']   # added to the defaults
     exempt: ['.env.example']           # user config only
+  comment_brevity: warn
 ```
 
 ```yaml
@@ -90,6 +100,9 @@ rules:
 rules:
   secrets:
     patterns: ['*.age']
+  comment_brevity: { level: block, max_lines: 2 }
+  test_factories: { level: warn, discouraged_calls: [make_valid_user] }
+  branch_name: { level: block, pattern: '^(feat|fix|chore)/.+$', base: main }
 ```
 
 The agent can edit the repo file, so **a repo can only tighten a guard rule**. It can raise
@@ -116,6 +129,107 @@ itself reference the file.
 
 A Grep over a whole directory can still read a secret file the search tool doesn't skip. The
 sandbox and repo-warden cover that case.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `patterns` | `[]` | added to the defaults; the repo config can add patterns too |
+| `exempt` | `[]` | basenames never treated as secret, e.g. `.env.example`; user config only |
+
+### `self_guard` (guard, default `block`)
+
+Stops the agent switching devkit off. It refuses:
+
+- a shell command that runs `devkit uninstall`;
+- a write or edit to the devkit user config, Claude Code's `settings.json` or Codex's `hooks.json`.
+  These are the paths devkit itself uses, so `XDG_CONFIG_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
+  are honoured, and symlinks are resolved. **In Codex, only updates are refused, not deletes or
+  moves.** See [Codex: known gaps](#codex-known-gaps).
+
+Reading those files, `devkit status` and `devkit install` are fine. To uninstall devkit or change
+its config, do it yourself from your own terminal. The rule has no settings, and a repo can't turn
+it off.
+
+Like `secrets`, this is string matching. A command that doesn't spell out `devkit uninstall`, such as
+`python -m devkit.cli uninstall` or a `sed` on the file, gets past it. For a hard lock, add a deny
+rule to Claude Code's own permissions, for example `"deny": ["Bash(devkit uninstall*)"]`.
+
+### `comment_brevity` (style, default `block`)
+
+Refuses a write or edit that **introduces** a comment longer than `max_lines`:
+
+- a run of consecutive line comments of the same style (`#` or `//`); banner lines such as `###` don't count.
+  As a side effect, `///` lines don't count either, so Rust doc comments and TypeScript triple-slash
+  comments are never checked;
+- a block comment (`/* ... */`);
+- a Python docstring (module, class or function).
+
+Comments that were already in the file are not reported, so editing near an old long docstring is
+fine. They are matched by text with indentation ignored, so moving or re-indenting one doesn't count
+as introducing it. A shebang (`#!` on line 1) isn't a comment. Python is read with the tokenizer, so a string literal containing `#` lines is not a comment.
+If a Python file doesn't parse, devkit falls back to matching patterns. Alembic migration headers
+(module docstrings under `migrations/versions/`) are skipped. Known file types: Python, shell,
+YAML, Ruby, and C-family and JS/TS sources (`.c .h .cpp .hpp .go .java .rs .js .jsx .ts .tsx`;
+`.css` for block comments). Other files, such as Markdown, are never checked. The message names
+the line and says that longer rationale belongs in the commit message, PR description or docs.
+When the edit couldn't be placed in the file (see the mappings below), only the edit's own text is
+judged, and the message leaves out the line number.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `max_lines` | `2` | the longest comment allowed; at least 1 |
+
+### `test_factories` (style, default `off`, never blocks)
+
+Runs **after** the tool (PostToolUse), on Python files under a `tests` directory (but not in
+`factories`). It warns in two cases:
+
+- the file constructs a model directly, as `User(...)`, while the nearest `tests/factories/`
+  above the file declares a factory for it. The warning suggests `UserFactory.build(...)`;
+- the file calls a function listed in `discouraged_calls`.
+
+`block` is treated as `warn`: the edit has already happened, so the warning is feedback for the
+agent's next step.
+
+Paths count from the repo's top level, so a checkout under `~/tests/` or `~/factories/` is judged by
+its own layout. The `tests/factories/` lookup stops at the repo's top level.
+
+Factories are found with GrandFlow's pattern, which recognises only this form: a single-dot
+`factory.*` base, with `class Meta:` directly after the class line and a bare model name.
+
+```python
+class UserFactory(factory.Factory):      # also factory.DjangoModelFactory etc.
+    class Meta:
+        model = User
+```
+
+It doesn't recognise `factory.django.DjangoModelFactory`, an imported base such as
+`DjangoModelFactory`, a docstring before `Meta`, or `model = models.User`. A factory written in one
+of those forms is silently not found.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `discouraged_calls` | `[]` | function names to warn about, e.g. `[make_valid_user]` |
+
+### `branch_name` (style, default `off`)
+
+Checks the name of a branch the agent creates with `git checkout -b`/`-B`, `git switch -c`/`-C` or
+`git branch <name>`. Flags such as `git branch -d old` are not names, and neither are redirections
+such as `git branch 2>/dev/null` or text on the next line. The base branch is always accepted.
+
+Detection uses GrandFlow's pattern, so only these exact forms are recognised: the short flag right
+after the subcommand, and the subcommand right after `git`. Branches created with
+`git switch --create x`, `git checkout -q -b x`, `git checkout --track -b x` or
+`git -C repo checkout -b x` are not checked. `devkit check` on the branch name catches these later
+(planned in a later group). A name that doesn't match `pattern` gets a finding quoting the pattern.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `pattern` | `^(feat\|fix\|chore)/.+$` | a Python regular expression, searched in the name |
+| `base` | `main` | always accepted |
+
+An invalid setting (an unknown key, a wrong type, `max_lines: 0`, a `pattern` that isn't a valid
+regular expression) is a config error, handled like any other: `devkit status` fails and a hook
+skips that file.
 
 ## Claude Code mapping
 
@@ -147,12 +261,30 @@ text. Codex can't read files except through `Bash`, so there is no separate read
 devkit registers PreToolUse for `^(Bash|apply_patch)$`. Output is the same JSON as for Claude Code:
 a PreToolUse `deny` with the reason, or `additionalContext` for a warning, and never `allow`.
 
-## PostToolUse
+### Codex: known gaps
 
-devkit registers a PostToolUse hook (Claude `Write|Edit|MultiEdit`, Codex `^apply_patch$`) only
-when a rule runs after the tool. The `secrets` rule doesn't, so today only PreToolUse is
-installed. Each registered hook starts a process on every matching tool call. When a later version
-adds such a rule, run `devkit install` again.
+> [!WARNING]
+> **Codex is not fully supported.** These are known holes, not bugs that will surprise you later:
+>
+> - **Not tested against real Codex.** The hook format, the `/hooks` trust step and the
+>   `apply_patch` envelope come from Codex's documentation. Nobody has yet checked them end to end.
+> - **`self_guard` misses deletes and moves.** An `apply_patch` that runs `*** Delete File` on
+>   `hooks.json`, or moves it away with `*** Move to`, is not refused. Only an update to the file is.
+> - **`config.toml` is not protected.** The agent can add `[features] hooks = false` to Codex's
+>   `config.toml` and switch every devkit hook off. `devkit status` warns about it afterwards, but
+>   nothing stops it happening.
+
+## PostToolUse and file content
+
+devkit registers a PostToolUse hook (Claude `Write|Edit|MultiEdit`, Codex `^apply_patch$`) because
+`test_factories` runs after the tool. The hook is registered even while that rule is `off`, so
+switching the rule on needs no reinstall. Each registered hook starts a process on every matching
+tool call. If you installed with an earlier version that registered only PreToolUse, run
+`devkit install` again.
+
+A hook reads a file's content (before and after the edit) only when a rule that is enabled for that
+repo needs it. That means `comment_brevity` in an opted-in repo, or `test_factories` when switched
+on. Otherwise the event carries just the path, which is all `secrets` and `self_guard` use.
 
 ## Development
 

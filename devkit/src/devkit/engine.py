@@ -3,15 +3,38 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from . import config as config_mod
 from .events import Event, Level, Outcome
 from .repo import find_top
-from .rules import get_rule
+from .rules import Rule, get_rule
 
 _GLOB = set("*?")  # not `[`: real paths have brackets (Next.js `app/[id]/`)
+_configs: ContextVar[dict | None] = ContextVar("devkit_configs", default=None)
+
+
+@contextmanager
+def one_run():
+    """Load each repo's config once for everything inside (one hook call), not once per event."""
+    token = _configs.set({})
+    try:
+        yield
+    finally:
+        _configs.reset(token)
+
+
+def _load(top: Path | None, *, strict: bool, user_path: Path | None = None) -> config_mod.Config:
+    cache = _configs.get()
+    if cache is None:
+        return config_mod.load(top, strict=strict, user_path=user_path)
+    key = (top, strict, user_path)
+    if key not in cache:
+        cache[key] = config_mod.load(top, strict=strict, user_path=user_path)
+    return cache[key]
 
 
 def event_top(event: Event) -> Path | None:
@@ -21,24 +44,34 @@ def event_top(event: Event) -> Path | None:
     return find_top(event.cwd)
 
 
+def _active(cfg: config_mod.Config, event: Event) -> Iterator[tuple[Rule, config_mod.RuleConfig]]:
+    """The rules that run on `event` under `cfg`: on, in scope, and for this phase and kind."""
+    for name, rc in cfg.rules.items():
+        if rc.level is Level.OFF:
+            continue
+        rule = get_rule(name)
+        if not rule.guard and not cfg.in_scope:
+            continue
+        if event.phase not in rule.phases or event.kind not in rule.kinds:
+            continue
+        yield rule, rc
+
+
+def needs_content(event: Event) -> bool:
+    """Whether a rule enabled for this event's repo reads its before/after text, so the adapter must load it."""
+    return any(rule.content for rule, _ in _active(_load(event_top(event), strict=False), event))
+
+
 def evaluate(events: Iterable[Event], *, strict: bool = False, user_path: Path | None = None) -> Outcome:
     out = Outcome()
     configs: dict[Path | None, config_mod.Config] = {}
     for event in events:
         top = event_top(event)
         if top not in configs:
-            configs[top] = cfg = config_mod.load(top, strict=strict, user_path=user_path)
+            configs[top] = cfg = _load(top, strict=strict, user_path=user_path)
             out.notes += [f"devkit: ignored invalid config {e}" for e in cfg.errors
                           if f"devkit: ignored invalid config {e}" not in out.notes]
-        cfg = configs[top]
-        for name, rc in cfg.rules.items():
-            if rc.level is Level.OFF:
-                continue
-            rule = get_rule(name)
-            if not rule.guard and not cfg.in_scope:
-                continue
-            if event.phase not in rule.phases or event.kind not in rule.kinds:
-                continue
+        for rule, rc in _active(configs[top], event):
             level = min(rc.level, rule.max_level)
             out.findings += [(level, f) for f in rule.check(event, rc.settings)]
     return out

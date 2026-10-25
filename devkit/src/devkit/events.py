@@ -36,6 +36,7 @@ class Event:
     before: str | None = None
     after: str | None = None
     cwd: str | None = None
+    fragment: bool = False  # before/after are loose snippets (an edit that couldn't be placed), not the file
 
 
 @dataclass(frozen=True)

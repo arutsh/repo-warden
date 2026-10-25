@@ -101,6 +101,9 @@ def _parse_rule(path: Path, name: Any, spec: Any) -> dict[str, Any]:
                 raise ConfigError(path, where, str(e)) from None
         elif key in rule.settings:
             out[key] = _check_type(path, where, value, rule.settings[key])
+            problem = rule.validate(key, out[key])
+            if problem:
+                raise ConfigError(path, where, problem)
         else:
             raise ConfigError(path, where, "unknown setting")
     return out

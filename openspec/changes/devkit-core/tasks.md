@@ -48,16 +48,17 @@
   > **Note (2026-10-18):** the README section is written. The live Codex check is **still to do**, because there is no active Codex account yet. So far the adapter has been tested two ways: with recorded-payload tests, and by running the real `devkit hook codex` command against Codex-shaped JSON. It has not run inside Codex.
   >
   > When an account is available, run the steps above. Also confirm that a `warn`-level finding's `additionalContext` reaches the model. Then tick this task.
-- [ ] 2.5 Run the devkit and root test suites clean; PR merged.
+- [x] 2.5 Run the devkit and root test suites clean; PR merged.
 
 ## 3. Style rules: comment_brevity, test_factories, branch_name — depends on 1 (2 for Codex coverage)
 
-- [ ] 3.1 Port `comment_brevity` from GrandFlow (tokenizer and AST for Python, a pattern fallback, only "introduced" violations counted, configurable `max_lines`). Verify with tests for every spec scenario, plus a file that fails to parse using the fallback and an Alembic migration header skipped.
-- [ ] 3.2 Port `test_factories` (factory discovery in the nearest `tests/factories/`, configurable `discouraged_calls`, `block` treated as `warn`, post phase only). Verify with tests for raw construction with a factory present, no factories directory, a discouraged call, and that it never blocks.
-- [ ] 3.3 Implement `branch_name` (configurable `pattern` and `base`, the GrandFlow regex for detecting branch creation, flags ignored). Verify with tests for `git switch -c tmp` flagged, a conforming name allowed, `git branch -d old` ignored, and `main` accepted.
-- [ ] 3.4 Run each style rule through both adapters. Verify with payload tests that a Claude `Edit` and a Codex `apply_patch` adding the same four-line comment produce the same finding, and that `test_factories` warns from PostToolUse in both.
-- [ ] 3.5 Document each rule and its settings in the devkit README. Verify that the README's example config loads without errors through `devkit status`.
-- [ ] 3.6 Run the devkit and root test suites clean; PR merged.
+- [x] 3.1 Port `comment_brevity` from GrandFlow (tokenizer and AST for Python, a pattern fallback, only "introduced" violations counted, configurable `max_lines`). Verify with tests for every spec scenario, plus a file that fails to parse using the fallback and an Alembic migration header skipped.
+- [x] 3.2 Port `test_factories` (factory discovery in the nearest `tests/factories/`, configurable `discouraged_calls`, `block` treated as `warn`, post phase only). Verify with tests for raw construction with a factory present, no factories directory, a discouraged call, and that it never blocks.
+- [x] 3.3 Implement `branch_name` (configurable `pattern` and `base`, the GrandFlow regex for detecting branch creation, flags ignored). Verify with tests for `git switch -c tmp` flagged, a conforming name allowed, `git branch -d old` ignored, and `main` accepted.
+- [x] 3.4 Run each style rule through both adapters. Verify with payload tests that a Claude `Edit` and a Codex `apply_patch` adding the same four-line comment produce the same finding, and that `test_factories` warns from PostToolUse in both.
+- [x] 3.5 Document each rule and its settings in the devkit README. Verify that the README's example config loads without errors through `devkit status`.
+- [x] 3.6 Add the `self_guard` guard rule (D11), found in the group 3 manual test: the agent could run `devkit uninstall` when asked. It flags `devkit uninstall` in shell commands, and writes or edits to the devkit user config, Claude's `settings.json` and Codex's `hooks.json`. Verify with tests for every rule-engine `self_guard` scenario, through both adapters, plus a symlinked settings file and a repo config that can't turn it off. Document it in the README.
+- [ ] 3.7 Run the devkit and root test suites clean; PR merged.
 
 ## 4. Repo checks and opting repos in — depends on 1, 3
 
