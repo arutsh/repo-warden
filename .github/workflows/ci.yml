@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep (search.code tests run against both engines)
+        run: sudo apt-get update -q && sudo apt-get install -y -q ripgrep
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Sync the workspace
+        run: uv sync --locked --all-packages  # fails if uv.lock is out of date with pyproject.toml
+      - name: repo-warden tests
+        run: uv run pytest
+      - name: devkit tests
+        run: uv run --package repo-warden-devkit pytest devkit/tests

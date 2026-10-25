@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from ..events import Event, Outcome, Phase
 from ..rules import any_rule
 from . import read_text
+from . import resolve as _abs
 
 PRE_MATCHER = "Bash|Read|Grep|Glob|Write|Edit|MultiEdit"
 POST_MATCHER = "Write|Edit|MultiEdit"
 HOOK_EVENTS = {"pre-tool-use": ("PreToolUse", "pre", PRE_MATCHER), "post-tool-use": ("PostToolUse", "post", POST_MATCHER)}
-
-
-def _abs(path: str | None, cwd: str | None) -> str | None:
-    if not path:
-        return None
-    return path if os.path.isabs(path) or not cwd else os.path.join(cwd, path)
 
 
 def _replace(text: str, old: str, new: str, replace_all: bool) -> str | None:

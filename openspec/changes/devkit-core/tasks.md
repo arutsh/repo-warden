@@ -36,14 +36,18 @@
   - the "early feedback, not a security boundary" section pointing to cplt and repo-warden.
 
   Link it from the root README. Verify by installing on this machine and running a real Claude Code session in a scratch repo, where `cat .env` is denied with the devkit reason.
-- [ ] 1.8 Run `uv run pytest` and `uv run --package repo-warden-devkit pytest devkit/tests` clean; PR merged.
+- [x] 1.8 Run `uv run pytest` and `uv run --package repo-warden-devkit pytest devkit/tests` clean; PR merged.
 
 ## 2. Codex CLI adapter — depends on 1
 
-- [ ] 2.1 Implement `patch.py` (D6): parse Add, Update (with Move) and Delete, apply hunks in memory, and fall back to the hunk text. Verify with tests on patches that add a file, update with matching context, update with stale context (fallback), move, and delete, plus a malformed envelope rejected.
-- [ ] 2.2 Implement the Codex adapter and `devkit hook codex pre-tool-use|post-tool-use`. Verify with recorded-payload tests for: a Bash `cat .env` deny, an `apply_patch` touching `.env.local` denied, an allowed patch with no output, and malformed JSON failing open.
-- [ ] 2.3 Extend `install|uninstall` and `status` to `--agent codex` (`~/.codex/hooks.json`, the `/hooks` review notice, a warning when `config.toml` disables hooks). Verify with the same installer tests as 1.6 on a temp `HOME`, and the hooks-disabled warning.
+- [x] 2.1 Implement `patch.py` (D6): parse Add, Update (with Move) and Delete, apply hunks in memory, and fall back to the hunk text. Verify with tests on patches that add a file, update with matching context, update with stale context (fallback), move, and delete, plus a malformed envelope rejected.
+- [x] 2.2 Implement the Codex adapter and `devkit hook codex pre-tool-use|post-tool-use`. Verify with recorded-payload tests for: a Bash `cat .env` deny, an `apply_patch` touching `.env.local` denied, an allowed patch with no output, and malformed JSON failing open.
+- [x] 2.3 Extend `install|uninstall` and `status` to `--agent codex` (`~/.codex/hooks.json`, the `/hooks` review notice, a warning when `config.toml` disables hooks). Verify with the same installer tests as 1.6 on a temp `HOME`, and the hooks-disabled warning.
 - [ ] 2.4 Add the Codex section to the devkit README. Verify by running a real Codex CLI session in a scratch repo after `/hooks` approval: a shell `cat .env` and an `apply_patch` that creates `.env.local` are both denied.
+
+  > **Note (2026-10-18):** the README section is written. The live Codex check is **still to do**, because there is no active Codex account yet. So far the adapter has been tested two ways: with recorded-payload tests, and by running the real `devkit hook codex` command against Codex-shaped JSON. It has not run inside Codex.
+  >
+  > When an account is available, run the steps above. Also confirm that a `warn`-level finding's `additionalContext` reaches the model. Then tick this task.
 - [ ] 2.5 Run the devkit and root test suites clean; PR merged.
 
 ## 3. Style rules: comment_brevity, test_factories, branch_name — depends on 1 (2 for Codex coverage)
