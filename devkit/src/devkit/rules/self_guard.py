@@ -11,10 +11,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..events import Event, Finding, Level
+from ..install import DEVKIT_RE
 from . import Rule
 
-# `devkit` (or devkit.exe, any path, optionally quoted) as a word, then `uninstall`; like install._MANAGED.
-UNINSTALL_RE = re.compile(r"(?:^|[/\\'\"\s;&|(`])devkit(?:\.exe)?['\"]?\s+uninstall\b", re.IGNORECASE)
+UNINSTALL_RE = re.compile(DEVKIT_RE + r"uninstall\b", re.IGNORECASE)
 
 ASK = "Ask the user to make this change themselves, from their own terminal."
 

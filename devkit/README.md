@@ -9,8 +9,14 @@ cover things like not reading secret files and keeping code comments short. The 
 devkit is a separate package that lives in the repo-warden repository. repo-warden (the broker) does not depend on it,
 and installing repo-warden installs nothing from devkit. Everything is opt-in.
 
-> Status: groups 1–3 of `devkit-core`. Four rules (`secrets`, `comment_brevity`, `test_factories`,
-> `branch_name`), and the Claude Code and Codex CLI adapters.
+> Status: groups 1–3 of `devkit-core`. Five rules (`secrets`, `self_guard`, `comment_brevity`,
+> `test_factories`, `branch_name`), and the Claude Code and Codex CLI adapters.
+
+> [!WARNING]
+> **CODEX CLI SUPPORT IS INCOMPLETE.** The Codex adapter has never been run against a real
+> Codex session, only against Codex's documented hook format. Some protections that work in
+> Claude Code don't work in Codex yet. See [Codex: known gaps](#codex-known-gaps). Use Claude
+> Code if you need devkit's rules to hold.
 
 ## Not a security boundary
 
@@ -62,7 +68,7 @@ the hook's content, so you need to trust again after a reinstall that changes th
 | Repo | add `.devkit.yaml` at the repo's top level (or set `repos: all`) | delete it |
 | Rule | `level: warn` or `block` | `level: off` |
 
-Guard rules (`secrets`) run in every repo, and outside repos too, once the agent hook is installed.
+Guard rules (`secrets`, `self_guard`) run in every repo, and outside repos too, once the agent hook is installed.
 Style rules (`comment_brevity`, `test_factories`, `branch_name`) run only in opted-in repos, unless the
 user config sets `repos: all`.
 
@@ -136,7 +142,8 @@ Stops the agent switching devkit off. It refuses:
 - a shell command that runs `devkit uninstall`;
 - a write or edit to the devkit user config, Claude Code's `settings.json` or Codex's `hooks.json`.
   These are the paths devkit itself uses, so `XDG_CONFIG_HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`
-  are honoured, and symlinks are resolved.
+  are honoured, and symlinks are resolved. **In Codex, only updates are refused, not deletes or
+  moves.** See [Codex: known gaps](#codex-known-gaps).
 
 Reading those files, `devkit status` and `devkit install` are fine. To uninstall devkit or change
 its config, do it yourself from your own terminal. The rule has no settings, and a repo can't turn
@@ -150,7 +157,9 @@ rule to Claude Code's own permissions, for example `"deny": ["Bash(devkit uninst
 
 Refuses a write or edit that **introduces** a comment longer than `max_lines`:
 
-- a run of consecutive line comments of the same style (`#` or `//`); banner lines such as `###` don't count;
+- a run of consecutive line comments of the same style (`#` or `//`); banner lines such as `###` don't count.
+  As a side effect, `///` lines don't count either, so Rust doc comments and TypeScript triple-slash
+  comments are never checked;
 - a block comment (`/* ... */`);
 - a Python docstring (module, class or function).
 
@@ -252,6 +261,19 @@ text. Codex can't read files except through `Bash`, so there is no separate read
 devkit registers PreToolUse for `^(Bash|apply_patch)$`. Output is the same JSON as for Claude Code:
 a PreToolUse `deny` with the reason, or `additionalContext` for a warning, and never `allow`.
 
+### Codex: known gaps
+
+> [!WARNING]
+> **Codex is not fully supported.** These are known holes, not bugs that will surprise you later:
+>
+> - **Not tested against real Codex.** The hook format, the `/hooks` trust step and the
+>   `apply_patch` envelope come from Codex's documentation. Nobody has yet checked them end to end.
+> - **`self_guard` misses deletes and moves.** An `apply_patch` that runs `*** Delete File` on
+>   `hooks.json`, or moves it away with `*** Move to`, is not refused. Only an update to the file is.
+> - **`config.toml` is not protected.** The agent can add `[features] hooks = false` to Codex's
+>   `config.toml` and switch every devkit hook off. `devkit status` warns about it afterwards, but
+>   nothing stops it happening.
+
 ## PostToolUse and file content
 
 devkit registers a PostToolUse hook (Claude `Write|Edit|MultiEdit`, Codex `^apply_patch$`) because
@@ -262,7 +284,7 @@ tool call. If you installed with an earlier version that registered only PreTool
 
 A hook reads a file's content (before and after the edit) only when a rule that is enabled for that
 repo needs it. That means `comment_brevity` in an opted-in repo, or `test_factories` when switched
-on. Otherwise the event carries just the path, which is all `secrets` uses.
+on. Otherwise the event carries just the path, which is all `secrets` and `self_guard` use.
 
 ## Development
 

@@ -16,14 +16,15 @@ from .adapters import AGENTS
 def run_hook(agent: str, name: str, stdin: TextIO, stdout: TextIO, stderr: TextIO) -> int:
     """Fail open: a broken devkit must never stall the agent. Enforcement lives in cplt, repo-warden and CI."""
     try:
-        from .engine import evaluate
+        from .engine import evaluate, one_run
 
         adapter = importlib.import_module(AGENTS[agent])
         hook_event, phase, _ = adapter.HOOK_EVENTS[name]
         payload = json.load(stdin)
         if not isinstance(payload, dict):
             raise ValueError("hook input is not a JSON object")
-        response = adapter.response(evaluate(adapter.events(payload, phase)), hook_event)
+        with one_run():
+            response = adapter.response(evaluate(adapter.events(payload, phase)), hook_event)
         if response:
             stdout.write(json.dumps(response) + "\n")
     except Exception as e:  # noqa: BLE001

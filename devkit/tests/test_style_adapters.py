@@ -109,6 +109,20 @@ def test_content_not_read_when_the_content_rules_are_off(repo):
     assert (ev.before, ev.after) == (None, None)
 
 
+def test_one_hook_call_loads_the_config_once(repo, monkeypatch):
+    from devkit import config
+
+    (repo / ".devkit.yaml").write_text("")
+    loads = []
+    real = config.load
+    monkeypatch.setattr(config, "load", lambda *a, **kw: loads.append(a) or real(*a, **kw))
+    x = codex_payload(str(repo), envelope(*(f"*** Add File: f{i}.py\n+x = {i}" for i in range(3))))
+    assert hook("codex", x, "pre-tool-use") is None
+    assert len(loads) == 1
+    (repo / ".devkit.yaml").write_text("rules:\n  comment_brevity: off\n")  # the next call sees the change
+    assert hook("codex", x, "pre-tool-use") is None and len(loads) == 2
+
+
 # --- an edit that can't be placed is judged as a fragment: no line number ---
 
 def test_unplaced_edit_reports_no_line_number(repo):

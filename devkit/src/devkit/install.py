@@ -18,7 +18,9 @@ from .adapters import claude, codex
 
 HOOK_TIMEOUT_S = 15
 BACKUP_SUFFIX = ".devkit-backup"
-_MANAGED = re.compile(r"(?:^|[/\\'\"\s])devkit(?:\.exe)?['\"]?\s+hook\s+(\w+)\b", re.IGNORECASE)
+# `devkit` (or devkit.exe, any path, optionally quoted) as a word, then a subcommand; shared with self_guard.
+DEVKIT_RE = r"(?:^|[/\\'\"\s;&|(`])devkit(?:\.exe)?['\"]?\s+"
+_MANAGED = re.compile(DEVKIT_RE + r"hook\s+(\w+)\b", re.IGNORECASE)
 
 
 class InstallError(Exception):
