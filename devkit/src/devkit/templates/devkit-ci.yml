@@ -1,0 +1,26 @@
+# Runs the devkit rules on each pull request's changes (`devkit check --range`).
+# Pin DEVKIT_REF to a repo-warden tag or commit you trust; `main` follows the latest devkit.
+name: devkit
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DEVKIT_REF: main
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the range check needs the base branch's history
+      - uses: astral-sh/setup-uv@v6
+      - name: devkit check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: >-
+          uvx --from "repo-warden-devkit @ git+https://github.com/arutsh/repo-warden@${DEVKIT_REF}#subdirectory=devkit"
+          devkit check --range "origin/${BASE_REF}..HEAD"

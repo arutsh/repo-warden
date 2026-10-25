@@ -1,4 +1,4 @@
-"""Add or remove devkit's hook entries in an agent's user config without touching anything else."""
+"""Add or remove devkit's hooks (agent user configs, a repo's git pre-commit) without touching anything else."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -139,24 +140,12 @@ def installed(agent: str) -> bool:
     return strip(data, agent) != data
 
 
-def write_json(path: Path, data: dict[str, Any], original: str | None) -> None:
-    """Atomic replace; the first time devkit changes an existing file, its original is kept as a backup.
-
-    A symlinked config (dotfiles) is written through to its target; the backup sits next to the link.
-    """
-    backup = path.with_name(path.name + BACKUP_SUFFIX)
-    path = Path(os.path.realpath(path))
+def _atomic_write(path: Path, text: str, mode: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    mode = path.stat().st_mode & 0o777 if original is not None else 0o600
-    if original is not None and not backup.exists():
-        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)  # may hold tokens: keep the mode
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(original)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.write("\n")
+            f.write(text)
             f.flush()
             os.fsync(f.fileno())
         os.chmod(tmp, mode)
@@ -164,6 +153,21 @@ def write_json(path: Path, data: dict[str, Any], original: str | None) -> None:
     except BaseException:
         os.unlink(tmp)
         raise
+
+
+def write_json(path: Path, data: dict[str, Any], original: str | None) -> None:
+    """Atomic replace; the first time devkit changes an existing file, its original is kept as a backup.
+
+    A symlinked config (dotfiles) is written through to its target; the backup sits next to the link.
+    """
+    backup = path.with_name(path.name + BACKUP_SUFFIX)
+    path = Path(os.path.realpath(path))
+    mode =path.stat().st_mode & 0o777 if original is not None else 0o600
+    if original is not None and not backup.exists():
+        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)  # may hold tokens: keep the mode
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(original)
+    _atomic_write(path, json.dumps(data, indent=2) + "\n", mode)
 
 
 def install(agent: str, exe: str) -> str:
@@ -193,3 +197,102 @@ def uninstall(agent: str) -> str:
         return f"{agent}: not installed in {path}"
     write_json(path, new, original)
     return f"{agent}: removed from {path}"
+
+
+GIT_HOOK_MARKER = "# devkit-managed"
+_USE_CHECK = "call `devkit check --staged` from your existing pre-commit setup instead"
+
+
+def _git_out(cwd: str, *args: str) -> str | None:
+    """git's stdout, or None when it exits non-zero (an unset config key, not a repo)."""
+    try:
+        proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    except OSError as e:
+        raise InstallError(f"cannot run git: {e}") from None
+    return proc.stdout.rstrip("\n") if proc.returncode == 0 else None
+
+
+def git_hook_path(cwd: str) -> Path:
+    """The repo's pre-commit hook; `--git-path` resolves a linked worktree to the shared hooks directory."""
+    hooks = _git_out(cwd, "rev-parse", "--path-format=absolute", "--git-path", "hooks")
+    if hooks is None:
+        raise InstallError(f"{cwd} is not in a git repository")
+    return Path(hooks) / "pre-commit"
+
+
+def _hooks_path_setting(cwd: str) -> str | None:
+    return _git_out(cwd, "config", "--get", "core.hooksPath") or None
+
+
+def _read_hook(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        raise InstallError(f"cannot read {path}: {e}") from None
+
+
+_HOOK_HEAD = f"#!/bin/sh\n{GIT_HOOK_MARKER}: remove with `devkit uninstall --git-hooks`\n"
+_HOOK_RE = re.compile(re.escape(_HOOK_HEAD) + r"exec [^\n]+ check --staged\n")
+
+
+def git_hook_script(exe: str) -> str:
+    return f"{_HOOK_HEAD}exec {shlex.quote(exe)} check --staged\n"
+
+
+def is_managed_git_hook(text: str | None) -> bool:
+    """Exactly the script devkit writes, for any devkit path: an edited hook holds lines devkit must not drop."""
+    return text is not None and _HOOK_RE.fullmatch(text) is not None
+
+
+def _not_ours(text: str) -> str:
+    if any(line.startswith(GIT_HOOK_MARKER) for line in text.splitlines()):
+        return "was edited since devkit wrote it"
+    return "was not written by devkit"
+
+
+def install_git_hook(cwd: str, exe: str) -> str:
+    path = git_hook_path(cwd)
+    setting = _hooks_path_setting(cwd)
+    if setting:
+        raise InstallError(f"core.hooksPath is set ({setting}), so devkit won't write a hook; {_USE_CHECK}")
+    text = _read_hook(path)
+    if text is not None and not is_managed_git_hook(text):
+        raise InstallError(f"{path} {_not_ours(text)}; left unchanged. To run devkit, {_USE_CHECK}")
+    script = git_hook_script(exe)
+    if text == script:
+        return f"git: already installed in {path}"
+    try:
+        _atomic_write(path, script, 0o755)
+    except OSError as e:
+        raise InstallError(f"cannot write {path}: {e}") from None
+    return f"git: installed in {path}"
+
+
+def uninstall_git_hook(cwd: str) -> str:
+    path = git_hook_path(cwd)
+    text = _read_hook(path)
+    if text is None:
+        return f"git: not installed in {path}"
+    if not is_managed_git_hook(text):
+        return f"git: {path} {_not_ours(text)}; left unchanged, remove it yourself if you want it gone"
+    try:
+        path.unlink()
+    except OSError as e:
+        raise InstallError(f"cannot remove {path}: {e}") from None
+    return f"git: removed {path}"
+
+
+def git_hook_state(cwd: str) -> str:
+    """One line for `devkit status`."""
+    path = git_hook_path(cwd)
+    setting = _hooks_path_setting(cwd)
+    text = _read_hook(path)
+    if is_managed_git_hook(text):
+        return f"installed  ({path})"
+    if setting:
+        return f"not installed  (core.hooksPath is set: {setting})"
+    if text is not None:
+        return f"not installed  (the pre-commit hook {_not_ours(text)}: {path})"
+    return f"not installed  ({path})"

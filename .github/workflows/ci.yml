@@ -34,3 +34,21 @@ jobs:
         run: uv run pytest
       - name: devkit tests
         run: uv run --package repo-warden-devkit pytest devkit/tests
+
+  devkit:
+    name: devkit check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the range check needs the base branch's history
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - name: Sync the workspace
+        run: uv sync --locked --all-packages  # this checkout's devkit, so the PR dogfoods its own rules
+      - name: devkit check
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run devkit check --range "origin/${BASE_REF}..HEAD"

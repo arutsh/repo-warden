@@ -1,4 +1,4 @@
-"""`devkit hook | install | uninstall | status`."""
+"""`devkit hook | install | uninstall | status | check | init`."""
 
 from __future__ import annotations
 
@@ -53,18 +53,40 @@ def _agents(value: str) -> list[str]:
 def cmd_install(args: argparse.Namespace, *, remove: bool) -> int:
     from . import install
 
-    if not args.agent:
-        print("devkit: nothing to do; pass --agent", file=sys.stderr)
+    if not args.agent and not args.git_hooks:
+        print("devkit: nothing to do; pass --agent and/or --git-hooks", file=sys.stderr)
         return 2
     exe = None if remove else (args.exe or devkit_exe())
+    steps = [(lambda a=a: install.uninstall(a) if remove else install.install(a, exe)) for a in args.agent or []]
+    if args.git_hooks:
+        cwd = os.getcwd()
+        steps.append(lambda: install.uninstall_git_hook(cwd) if remove else install.install_git_hook(cwd, exe))
     status = 0
-    for agent in args.agent:
+    for step in steps:
         try:
-            print(install.uninstall(agent) if remove else install.install(agent, exe))
+            print(step())
         except install.InstallError as e:
             print(f"devkit: {e}", file=sys.stderr)
             status = 1
     return status
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    from . import initcmd
+    from .repo import find_top
+
+    top = find_top(os.getcwd())
+    if top is None:
+        print("devkit: not in a git repository", file=sys.stderr)
+        return 2
+    try:
+        lines = initcmd.init(top, agents_md=args.agents_md, openspec=args.openspec, ci=args.ci)
+    except initcmd.InitError as e:
+        print(f"devkit: {e}", file=sys.stderr)
+        return 1
+    print("\n".join(lines))
+    print("next: `devkit status` shows the effective settings; `devkit install --git-hooks` adds the pre-commit check")
+    return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -99,6 +121,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"  {agent:<8} {state}  ({target.config_path()})")
         for warning in target.warnings():
             print(f"    warning: {warning}")
+    if top is not None:
+        try:
+            print(f"git hook: {install.git_hook_state(str(top))}")
+        except install.InstallError as e:
+            print(f"git hook: unknown ({e})")
     return 0
 
 
@@ -114,16 +141,33 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in (("install", "register devkit hooks"), ("uninstall", "remove devkit hooks")):
         p = sub.add_parser(name, help=text)
         p.add_argument("--agent", type=_agents, help=f"comma-separated: {', '.join(AGENTS)}")
+        p.add_argument("--git-hooks", action="store_true", help="the current repo's git pre-commit hook")
         if name == "install":
             p.add_argument("--exe", help=argparse.SUPPRESS)  # tests: the devkit path to register
 
     sub.add_parser("status", help="show effective rule levels, where they came from, and what is installed")
+
+    p = sub.add_parser("check", help="run the rules on staged changes or a commit range (exit 1: blocked, 2: error)")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--staged", action="store_true", help="staged changes against HEAD (for pre-commit)")
+    mode.add_argument("--range", metavar="BASE..HEAD", help="the files changed on HEAD since BASE (for CI)")
+
+    p = sub.add_parser("init", help="opt this repo in: write .devkit.yaml (never overwrites)")
+    p.add_argument("--agents-md", action="store_true", help="also AGENTS.md, and CLAUDE.md importing it")
+    p.add_argument("--openspec", action="store_true", help="also generic rules in openspec/config.yaml")
+    p.add_argument("--ci", action="store_true", help="also a GitHub Actions workflow running `devkit check --range`")
 
     args = parser.parse_args(argv)
     if args.cmd == "hook":
         return run_hook(args.agent, args.event, sys.stdin, sys.stdout, sys.stderr)
     if args.cmd in ("install", "uninstall"):
         return cmd_install(args, remove=args.cmd == "uninstall")
+    if args.cmd == "check":
+        from .check import check
+
+        return check(os.getcwd(), staged=args.staged, spec=args.range, out=sys.stdout, err=sys.stderr)
+    if args.cmd == "init":
+        return cmd_init(args)
     return cmd_status(args)
 
 

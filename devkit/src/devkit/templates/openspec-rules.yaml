@@ -1,0 +1,10 @@
+rules:
+  proposal:
+    - Say why before what, and list what is out of scope
+  specs:
+    - Give every requirement at least one WHEN/THEN scenario
+  design:
+    - For each decision, name the alternative considered and why it was rejected
+  tasks:
+    - Say how each task will be verified
+    - Group tasks so that each group can be merged as one pull request
