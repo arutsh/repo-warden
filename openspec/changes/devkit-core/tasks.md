@@ -48,7 +48,7 @@
   > **Note (2026-10-18):** the README section is written. The live Codex check is **still to do**, because there is no active Codex account yet. So far the adapter has been tested two ways: with recorded-payload tests, and by running the real `devkit hook codex` command against Codex-shaped JSON. It has not run inside Codex.
   >
   > When an account is available, run the steps above. Also confirm that a `warn`-level finding's `additionalContext` reaches the model. Then tick this task.
-- [ ] 2.5 Run the devkit and root test suites clean; PR merged.
+- [x] 2.5 Run the devkit and root test suites clean; PR merged.
 
 ## 3. Style rules: comment_brevity, test_factories, branch_name — depends on 1 (2 for Codex coverage)
 
