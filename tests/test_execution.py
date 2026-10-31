@@ -157,7 +157,7 @@ def test_marker_only_fails(tmp_path: Path):
     probes = verify_containment(tmp_path / "repo", environ={CPLT_MARKER: "1"}, platform="linux",
                                 seccomp_mode=0, home=str(home))
     assert _failed(probes) == {"seccomp", "parent_write", "ssh"}
-    assert os.listdir(tmp_path) == ["home", "repo"]  # the write probe cleaned up after itself
+    assert sorted(os.listdir(tmp_path)) == ["home", "repo"]  # the write probe cleaned up after itself
     with pytest.raises(ContainmentError, match="seccomp.*parent_write.*ssh"):
         require_containment(probes)
 
