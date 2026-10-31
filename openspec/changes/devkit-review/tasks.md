@@ -4,9 +4,9 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 1. Config and event model
 
-- [ ] 1.1 Add the `turn` event kind and the phases `session-start`, `prompt` and `stop` (D2). Add `session_id` and a read-only `meta` mapping to `Event`. Verify that existing engine tests still pass, and that a new test shows a `pre`-phase rule never sees `turn` events.
-- [ ] 1.2 Add per-rule `user_only` settings to the config (D10): a repo-layer value for one of these keys is recorded as ignored and shown by `devkit status`. Verify with config tests where `log_content: true` in `.devkit.yaml` is ignored and reported, and the same key in the user config is applied.
-- [ ] 1.3 Add the `review` rule's class and settings, without the snapshot logic yet:
+- [x] 1.1 Add the `turn` event kind and the phases `session-start`, `prompt` and `stop` (D2). Add `session_id` and a read-only `meta` mapping to `Event`. Verify that existing engine tests still pass, and that a new test shows a `pre`-phase rule never sees `turn` events.
+- [x] 1.2 Add per-rule `user_only` settings to the config (D10): a repo-layer value for one of these keys is recorded as ignored and shown by `devkit status`. Verify with config tests where `log_content: true` in `.devkit.yaml` is ignored and reported, and the same key in the user config is applied.
+- [x] 1.3 Add the `review` rule's class and settings, without the snapshot logic yet:
   - `max_rounds` (1–5);
   - `skip_paths`;
   - `reviewers` (allowed focuses and models);

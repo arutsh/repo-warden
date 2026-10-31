@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Literal
+from types import MappingProxyType
+from typing import Any, Literal
 
-Kind = Literal["shell", "read", "write", "edit"]
-Phase = Literal["pre", "post", "check"]
+Kind = Literal["shell", "read", "write", "edit", "turn"]
+# "turn" events come in the turn phases only: session-start, prompt (a user prompt) and stop
+Phase = Literal["pre", "post", "check", "session-start", "prompt", "stop"]
 
 
 class Level(IntEnum):
@@ -37,6 +40,12 @@ class Event:
     after: str | None = None
     cwd: str | None = None
     fragment: bool = False  # before/after are loose snippets (an edit that couldn't be placed), not the file
+    session_id: str | None = None
+    # turn events: permission_mode, background_task_count, stop_hook_active
+    meta: Mapping[str, Any] = field(default_factory=dict, hash=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "meta", MappingProxyType(dict(self.meta)))
 
 
 @dataclass(frozen=True)

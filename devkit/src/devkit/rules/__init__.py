@@ -14,6 +14,7 @@ REGISTRY: dict[str, str] = {
     "comment_brevity": "devkit.rules.comment_brevity",
     "test_factories": "devkit.rules.test_factories",
     "branch_name": "devkit.rules.branch_name",
+    "review": "devkit.rules.review",
 }
 
 
@@ -28,6 +29,7 @@ class Rule:
     settings: ClassVar[Mapping[str, Any]] = {}  # setting -> default; the default's type is the setting's type
     extend: ClassVar[frozenset[str]] = frozenset()  # list settings each layer adds to instead of replacing
     repo_settings: ClassVar[frozenset[str] | None] = None  # for guard rules: settings the repo may set
+    user_only: ClassVar[frozenset[str]] = frozenset()  # settings the repo layer may never set, on any rule
 
     def validate(self, key: str, value: Any) -> str | None:
         """A problem with a setting's value beyond its type, or None; reported as a config error."""
