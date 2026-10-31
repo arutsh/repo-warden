@@ -67,4 +67,4 @@
 
   Add `allow_direct_backend` (commented out) to `examples/policy.yaml`. Verify with unit tests on fake inputs: a writable policy dir refused, a 0444 file in a 0555 dir refused, a sandbox-style denial on a user-writable dir accepted, direct refused without authorisation, refused when only a `--policy` file grants it, and allowed when the account policy grants it. Under `cplt exec`, verify that a policy in `/tmp` is refused and `~/.config/repo-warden/policy.yaml` (granted with `--allow-read`) is accepted.
 - [x] 4.8 Integration check: under `cplt exec`, start `repo-warden --repo <scratch>` with the default backend, connect a real MCP stdio client, call all six tools plus one denied and one unknown tool, and confirm the audit JSONL has the expected records outside the repo. Record the result in the PR description.
-- [ ] 4.9 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
+- [x] 4.9 Run `uv run pytest` (and the cplt-only tests under `cplt exec`) clean; PR merged.
