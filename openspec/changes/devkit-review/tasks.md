@@ -18,15 +18,16 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 2. Snapshots and git hardening
 
-- [ ] 2.1 Add `devkit/gitsafe.py`, copied from `repo_warden.gitcmd`: the env, the base overrides, and driver enumeration on every call (D4). It runs synchronously with `subprocess`. Verify with a parity test asserting that `GIT_ENV` and `BASE_OVERRIDES` equal repo-warden's, and a test that a `filter.x.clean` key produces the blanking overrides.
-- [ ] 2.2 Implement `snapshot(top, secret_patterns) -> tree_id`: a temp copy of the index, `add -A` with `:(exclude,icase,glob)` excludes, then `write-tree`. Verify with temp-repo tests:
+- [x] 2.1 Add `devkit/gitsafe.py`, copied from `repo_warden.gitcmd`: the env, the base overrides, and driver enumeration on every call (D4). It runs synchronously with `subprocess`. Verify with a parity test asserting that `GIT_ENV` and `BASE_OVERRIDES` equal repo-warden's, and a test that a `filter.x.clean` key produces the blanking overrides.
+- [x] 2.2 Implement `snapshot(top, secret_patterns) -> tree_id`: a temp copy of the index, `add -A` with `:(exclude,icase,glob)` excludes, then tree objects built from `ls-files -s` and written with `hash-object -t tree` (D4: cplt refuses `write-tree`). Verify with temp-repo tests:
+  - the id equals `git write-tree`'s for the same index, including nested dirs, executables, symlinks and a submodule;
   - identical trees give the same id;
   - an edit changes the id;
   - an untracked, non-ignored `.env.local` is left out of the tree (`git ls-tree -r`);
   - `git diff --cached` and `git rev-parse HEAD` are unchanged ("Index untouched");
   - a hostile `filter.x.clean` that writes a marker file never runs ("Hostile filter driver").
-- [ ] 2.3 Implement `changed_paths(a, b)` and `diff(a, b)` over tree ids, with the same excludes and hardening. Verify with tests that the diff between two snapshots shows only the edit, and that a secret path never appears.
-- [ ] 2.4 Check that snapshots work inside cplt. Under cplt, run the 2.2 tests against a scratch repo, with the devkit cache in `~/.cache`. Verify that objects can be written to `.git/objects`, and that no ref is updated. Record the result in the devkit README's review section. If cplt blocks object writes, stop and report before continuing.
+- [x] 2.3 Implement `changed_paths(a, b)` and `diff(a, b)` over tree ids, with the same excludes and hardening. Verify with tests that the diff between two snapshots shows only the edit, and that a secret path never appears.
+- [x] 2.4 Check that snapshots work inside cplt. Under cplt, run the 2.2 tests against a scratch repo, with the devkit cache in `~/.cache`. Verify that objects can be written to `.git/objects`, and that no ref is updated. Record the result in the devkit README's review section. If cplt blocks object writes, stop and report before continuing.
 
 ## 3. Review state, the stop decision and the Claude turn hooks
 
@@ -54,6 +55,8 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - `diff`;
   - `skip --reason`;
   - `reset`.
+
+  `followup_reviewers` can name a focus missing from `reviewers` (config checks one key at a time). `plan` handles it: either leave that focus out, or use its default model. Decide which when building `plan`, and test it.
 
   Verify with CLI tests:
   - `plan` JSON for round 1 lists every focus, and round 2 lists only `followup_reviewers`;

@@ -243,6 +243,30 @@ An invalid setting (an unknown key, a wrong type, `max_lines: 0`, a `pattern` th
 regular expression) is a config error, handled like any other: `devkit status` fails and a hook
 skips that file.
 
+### `review` (style, default `off`)
+
+Work in progress (the `devkit-review` change). The full description comes with the `devkit review`
+command.
+
+**Snapshots.** A snapshot of the working tree is a git tree id. It holds the tracked and untracked,
+non-ignored files, minus every path that matches the `secrets` patterns. It is built through a copy
+of the index in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/`. Every git call uses repo-warden's
+hardening: no system or global config, and no hooks, fsmonitor, pager, network, or repo-configured
+filter, diff or merge drivers. Because global config is ignored, a `core.excludesFile` set there is
+ignored too; only the repo's `.gitignore`, `.git/info/exclude` and `~/.config/git/ignore` apply.
+Snapshots write unreferenced objects to `.git/objects`, which `git gc` removes. They never change a
+ref, the index or the working tree.
+
+Paths that match a `secrets` pattern are left out even when `secrets.exempt` covers them, so review
+never sees them. A nested git repo with no commit yet (right after `git init x` inside the repo)
+makes git refuse to snapshot. Until it is committed, removed or ignored, every stop goes ahead with a
+one-line warning, and no review runs.
+
+**Inside cplt** (checked 2026-10-31): snapshots work. cplt's git guard refuses `git write-tree`, so
+devkit builds the tree objects itself and writes them with `git hash-object`, which the guard
+allows. The id is the same one `write-tree` would give. `~/.cache` is writable inside cplt, objects
+can be written to `.git/objects`, and no ref changes.
+
 ## Claude Code mapping
 
 | Claude tool | devkit event |

@@ -74,9 +74,11 @@ devkit-core D4 kept git out of hooks because tool hooks run on every tool call. 
 To take a snapshot:
 1. Copy the repo's index (`git rev-parse --git-path index`) to a temp file in the devkit cache directory.
 2. With `GIT_INDEX_FILE` set to that copy, run `git add -A -- . <excludes>`.
-3. Run `git write-tree`.
+3. Build the tree objects from `git ls-files -s -z` on that copy, and write them all with one `git hash-object -w -t tree --no-filters --stdin-paths` call. devkit computes each tree's id itself, so the parent trees can be built before anything is written, and it checks that git returns the same ids.
 
-The tree id is the fingerprint, and it can be diffed directly with `git diff <tree> <tree>`. Because the index is a copy, its stat cache makes `add -A` cheap, and the user's index and refs are never touched. `git write-tree` adds unreferenced objects, which `git gc` removes eventually. If a stored tree id has been removed, the state falls back as if it had no baseline.
+The result is the same tree id that `git write-tree` would give. `write-tree` isn't used because cplt's git guard refuses subcommands it doesn't know, `write-tree` and `mktree` among them (checked 2026-10-31). `ls-files`, `add`, `rm` and `hash-object` all work inside cplt.
+
+The tree id is the fingerprint, and it can be diffed directly with `git diff <tree> <tree>`. Because the index is a copy, its stat cache makes `add -A` cheap, and the user's index and refs are never touched. Writing the snapshot adds unreferenced objects, which `git gc` removes eventually. If a stored tree id has been removed, the state falls back as if it had no baseline.
 
 **Excludes:** every effective `secrets` pattern becomes `:(exclude,icase,glob)**/<pattern>`, plus the repo's ignore rules (which `add -A` already respects). So untracked `.env*` files never enter the object database or a diff.
 
