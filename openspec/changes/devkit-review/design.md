@@ -109,7 +109,7 @@ Location: `${XDG_CACHE_HOME:-~/.cache}/devkit/review/<sha256(realpath(top))[:16]
 - Access is serialised with an `fcntl` lock and written with temp file plus `os.replace`.
 - `reviewed` keeps the last 100 trees. Sessions not updated for 7 days are pruned on write.
 - A file that is unreadable or invalid is treated as empty, with a warning. This is the fail-open behaviour.
-- `SessionStart` with `source: resume` keeps an existing entry for that session. Other sources reset `baseline`.
+- `SessionStart` for a session that already has an entry keeps it, whatever the `source`. Claude's auto-compaction fires `SessionStart` (`source: compact`) mid-turn with the same session id, and resetting `baseline` then would drop the changes made before it from the review. A new session id gets a fresh entry.
 
 ### D6. The state machine at `stop`
 ```
@@ -126,6 +126,7 @@ if cur == s.turn_start or cur in reviewed: allow
 base = s.last_reviewed or s.baseline
 if every changed path in diff(base, cur) matches skip_paths: mark reviewed(cur); allow
 level == warn: notify once for cur; allow
+if another session in this repo has an active loop: allow   # second-session guard, D12(b)
 s.loop = {round 1, from: base, at: cur, record: None}; block(1)
 ```
 
@@ -309,7 +310,7 @@ Codex subagents are defined in TOML, and I've only seen them described by third 
 - When it is set, the skill runs `codex exec review --base <base> --json` in round 1, or `--uncommitted` where that fits better. It runs in the background, because Bash's default timeout is 2 minutes. The exact subcommand and flags must be checked with `codex exec review --help` first, because third-party sources disagree.
 - Codex findings are turned into the reviewer JSON format and go through the same checker. Nothing from Codex is trusted unchecked.
 - A missing `codex` binary or missing authentication skips this step, with a notice in the round's output.
-- **Recursion:** a Codex review doesn't change the working tree, so if Codex has devkit hooks installed, its own Stop decision sees `cur == turn_start` and doesn't trigger. As a second safeguard, the decision won't start a loop in a repo where a different session has an active loop.
+- **Recursion:** a Codex review doesn't change the working tree, so if Codex has devkit hooks installed, its own Stop decision sees `cur == turn_start` and doesn't trigger. As a second safeguard, the decision won't start a loop in a repo where a different session has an active loop. This guard is built with the stop decision (task 3.2), for every agent.
 - **Sandbox:** inside cplt, Codex needs network access to OpenAI, read access to `~/.codex`, and its own Linux sandbox, which may clash with cplt. This needs a live check.
 - The same "external reviewer command" shape also allows `claude -p` as the external reviewer of a Codex session.
 

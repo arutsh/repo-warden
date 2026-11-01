@@ -18,6 +18,7 @@ from . import rules
 from .adapters import claude, codex
 
 HOOK_TIMEOUT_S = 15
+TURN_HOOK_TIMEOUT_S = 30  # once per prompt or stop, and the review rule may snapshot the tree
 BACKUP_SUFFIX = ".devkit-backup"
 # `devkit` (or devkit.exe, any path, optionally quoted) as a word, then a subcommand; shared with self_guard.
 DEVKIT_RE = r"(?:^|[/\\'\"\s;&|(`])devkit(?:\.exe)?['\"]?\s+"
@@ -60,14 +61,21 @@ def _codex_warnings() -> list[str]:
     return []
 
 
-def _command(exe: str, agent: str, event: str) -> dict[str, Any]:
-    return {"type": "command", "command": f"{shlex.quote(exe)} hook {agent} {event}", "timeout": HOOK_TIMEOUT_S}
+def _command(exe: str, agent: str, event: str, timeout: int) -> dict[str, Any]:
+    return {"type": "command", "command": f"{shlex.quote(exe)} hook {agent} {event}", "timeout": timeout}
+
+
+def _group(exe: str, agent: str, name: str, matcher: str | None) -> dict[str, Any]:
+    """Tool hooks match tool names; turn hooks (no matcher) run on every prompt or stop."""
+    if matcher is None:
+        return {"hooks": [_command(exe, agent, name, TURN_HOOK_TIMEOUT_S)]}
+    return {"matcher": matcher, "hooks": [_command(exe, agent, name, HOOK_TIMEOUT_S)]}
 
 
 def _hooks(agent: str, adapter: ModuleType) -> Callable[[str], dict[str, list[dict[str, Any]]]]:
     def hooks(exe: str) -> dict[str, list[dict[str, Any]]]:
         """Only the events some rule runs in: each registered hook is a process per tool call."""
-        return {hook_event: [{"matcher": matcher, "hooks": [_command(exe, agent, name)]}]
+        return {hook_event: [_group(exe, agent, name, matcher)]
                 for name, (hook_event, phase, matcher) in adapter.HOOK_EVENTS.items() if rules.any_rule(phases=phase)}
     return hooks
 

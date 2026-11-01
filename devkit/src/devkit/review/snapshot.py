@@ -14,7 +14,7 @@ from pathlib import Path
 
 from .. import gitsafe
 
-_TREE_ID = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")  # sha1 or sha256, used with fullmatch
+TREE_ID = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")  # sha1 or sha256, used with fullmatch
 # Submodule bumps count as changes; `short` keeps git from reading the submodule's repo for a log.
 _DIFF_SUBMODULES = ("--ignore-submodules=none", "--submodule=short")
 
@@ -32,10 +32,10 @@ def secret_pathspecs(patterns: Iterable[str], *, exclude: bool = True) -> list[s
     return [spec for p in dict.fromkeys(patterns) for spec in (f":({magic})**/{p}", f":({magic})**/{p}/**")]
 
 
-def snapshot(top: str | os.PathLike, secret_patterns: Iterable[str]) -> str:
+def snapshot(top: str | os.PathLike, secret_patterns: Iterable[str], timeout_s: float | None = None) -> str:
     """The tree id of the tracked and untracked, non-ignored files under `top`, minus secret paths."""
     patterns = list(secret_patterns)
-    deadline = time.monotonic() + gitsafe.TIMEOUT_S  # one budget for every call, under the hooks' 30 s
+    deadline = time.monotonic() + (gitsafe.TIMEOUT_S if timeout_s is None else timeout_s)  # one budget, under 30 s
     env: dict[str, str] = {}
 
     def git(*args: str, stdin: bytes = b"") -> bytes:
@@ -102,10 +102,12 @@ def _write_trees(git: Callable[..., bytes], algo: str, tmp: Path) -> str:
     return root_id
 
 
-def changed_paths(top: str | os.PathLike, a: str, b: str, secret_patterns: Iterable[str]) -> list[str]:
+def changed_paths(top: str | os.PathLike, a: str, b: str, secret_patterns: Iterable[str],
+                  timeout_s: float | None = None) -> list[str]:
     """Paths that differ between trees `a` and `b`, both sides of a rename included."""
     out = gitsafe.run(top, "diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv",
-                      *_DIFF_SUBMODULES, _tree(a), _tree(b), "--", ".", *secret_pathspecs(secret_patterns))
+                      *_DIFF_SUBMODULES, _tree(a), _tree(b), "--", ".", *secret_pathspecs(secret_patterns),
+                      timeout_s=gitsafe.TIMEOUT_S if timeout_s is None else timeout_s)
     return [os.fsdecode(p) for p in out.split(b"\0") if p]
 
 
@@ -116,8 +118,19 @@ def diff(top: str | os.PathLike, a: str, b: str, secret_patterns: Iterable[str])
     return out.decode("utf-8", errors="replace")
 
 
+def missing(top: str | os.PathLike, tree_ids: Iterable[str], timeout_s: float | None = None) -> set[str]:
+    """The ids among `tree_ids` that are not trees in the repo, such as ones `git gc` pruned."""
+    ids = [_tree(t) for t in dict.fromkeys(tree_ids)]
+    if not ids:
+        return set()
+    out = gitsafe.run(top, "cat-file", "--batch-check=%(objecttype)", stdin=("\n".join(ids) + "\n").encode(),
+                      timeout_s=gitsafe.TIMEOUT_S if timeout_s is None else timeout_s)
+    found = out.decode().split("\n")
+    return {t for t, kind in zip(ids, found) if not kind.endswith("tree")} | set(ids[len(found):])
+
+
 def _tree(tree_id: str) -> str:
     # Ids come from the agent-writable state file: never let one pass as an option.
-    if not _TREE_ID.fullmatch(tree_id):
+    if not TREE_ID.fullmatch(tree_id):
         raise gitsafe.GitError(f"not a tree id: {tree_id!r}")
     return tree_id

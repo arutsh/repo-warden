@@ -21,6 +21,9 @@ USER_SETTINGS = {"permissions": {"ask": ["Bash(git push*)"]}, "model": "opus",
                  "hooks": {"PreToolUse": [USER_HOOK], "Stop": [{"hooks": [{"type": "command", "command": "say hi"}]}]}}
 
 
+CLAUDE_EVENTS = ["pre-tool-use", "post-tool-use", "session-start", "user-prompt-submit", "stop"]
+
+
 def devkit_entries(data):
     return [h["command"] for groups in data.get("hooks", {}).values() for g in groups for h in g["hooks"]
             if "devkit" in h["command"]]
@@ -29,7 +32,7 @@ def devkit_entries(data):
 def test_install_into_missing_file(settings):
     assert "installed" in install.install("claude", EXE)
     data = json.loads(settings.read_text())
-    assert devkit_entries(data) == ["'/opt/dev kit/bin/devkit' hook claude pre-tool-use", "'/opt/dev kit/bin/devkit' hook claude post-tool-use"]
+    assert devkit_entries(data) == [f"'/opt/dev kit/bin/devkit' hook claude {e}" for e in CLAUDE_EVENTS]
     pre = data["hooks"]["PreToolUse"][0]
     assert pre["matcher"] == "Bash|Read|Grep|Glob|Write|Edit|MultiEdit" and pre["hooks"][0]["timeout"] == 15
     assert not settings.with_name("settings.json.devkit-backup").exists()
@@ -46,9 +49,26 @@ def test_idempotent_and_preserves_user_settings(settings):
     assert settings.read_text() == first
     data = json.loads(first)
     assert data["permissions"] == USER_SETTINGS["permissions"] and data["model"] == "opus"
-    assert data["hooks"]["PreToolUse"][0] == USER_HOOK and data["hooks"]["Stop"] == USER_SETTINGS["hooks"]["Stop"]
-    assert len(devkit_entries(data)) == 2
+    assert data["hooks"]["PreToolUse"][0] == USER_HOOK and data["hooks"]["Stop"][0] == USER_SETTINGS["hooks"]["Stop"][0]
+    assert len(devkit_entries(data)) == len(CLAUDE_EVENTS)
     assert oct(settings.stat().st_mode & 0o777) == "0o640"
+
+
+def test_turn_hooks_have_no_matcher_and_a_longer_timeout(settings):
+    settings.parent.mkdir()
+    settings.write_text(json.dumps(USER_SETTINGS))
+    install.install("claude", EXE)
+    first = settings.read_text()
+    assert "already installed" in install.install("claude", EXE) and settings.read_text() == first
+    hooks = json.loads(first)["hooks"]
+    for event, name in (("SessionStart", "session-start"), ("UserPromptSubmit", "user-prompt-submit"),
+                        ("Stop", "stop")):
+        group = hooks[event][-1]
+        assert "matcher" not in group
+        assert group["hooks"] == [{"type": "command", "command": f"'{EXE}' hook claude {name}", "timeout": 30}]
+    assert hooks["Stop"][0] == USER_SETTINGS["hooks"]["Stop"][0]
+    install.uninstall("claude")
+    assert json.loads(settings.read_text()) == USER_SETTINGS
 
 
 def test_backup_written_once(settings):
@@ -64,8 +84,7 @@ def test_backup_written_once(settings):
 def test_reinstall_with_new_path_replaces_entries(settings):
     install.install("claude", EXE)
     install.install("claude", "/new/devkit")
-    assert devkit_entries(json.loads(settings.read_text())) == ["/new/devkit hook claude pre-tool-use",
-                                                                "/new/devkit hook claude post-tool-use"]
+    assert devkit_entries(json.loads(settings.read_text())) == [f"/new/devkit hook claude {e}" for e in CLAUDE_EVENTS]
 
 
 def test_uninstall_keeps_user_hooks(settings):
@@ -101,7 +120,7 @@ def test_invalid_file_refused_unchanged(settings, text):
 def test_post_hook_registered_when_a_rule_runs_post(settings, stub_rules):
     stub_rules("p", guard=True, phases={"post"})
     install.install("claude", EXE)
-    assert devkit_entries(json.loads(settings.read_text()))[-1] == "'/opt/dev kit/bin/devkit' hook claude post-tool-use"
+    assert "'/opt/dev kit/bin/devkit' hook claude post-tool-use" in devkit_entries(json.loads(settings.read_text()))
 
 
 def test_symlinked_settings_written_through(settings, tmp_path):
@@ -111,7 +130,7 @@ def test_symlinked_settings_written_through(settings, tmp_path):
     settings.parent.mkdir()
     settings.symlink_to(real)
     install.install("claude", EXE)
-    assert settings.is_symlink() and len(devkit_entries(json.loads(real.read_text()))) == 2
+    assert settings.is_symlink() and len(devkit_entries(json.loads(real.read_text()))) == len(CLAUDE_EVENTS)
     assert settings.with_name("settings.json.devkit-backup").is_file()
 
 

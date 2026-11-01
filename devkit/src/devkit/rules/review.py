@@ -47,7 +47,9 @@ class Review(Rule):
         return None
 
     def check(self, event: Event, settings: Mapping[str, Any]) -> list[Finding]:
-        return []
+        from ..review.hooks import handle  # imported only once the rule is on and in scope: it runs git
+
+        return handle(event, settings)
 
 
 def _focuses(names: Any) -> str | None:

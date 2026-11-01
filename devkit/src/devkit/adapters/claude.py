@@ -1,4 +1,4 @@
-"""Claude Code hooks: PreToolUse/PostToolUse JSON on stdin -> events; outcome -> Claude's hook JSON."""
+"""Claude Code hooks: tool and turn hook JSON on stdin -> events; outcome -> Claude's hook JSON."""
 
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ from . import resolve as _abs
 
 PRE_MATCHER = "Bash|Read|Grep|Glob|Write|Edit|MultiEdit"
 POST_MATCHER = "Write|Edit|MultiEdit"
-HOOK_EVENTS = {"pre-tool-use": ("PreToolUse", "pre", PRE_MATCHER), "post-tool-use": ("PostToolUse", "post", POST_MATCHER)}
+HOOK_EVENTS = {"pre-tool-use": ("PreToolUse", "pre", PRE_MATCHER), "post-tool-use": ("PostToolUse", "post", POST_MATCHER),
+               "session-start": ("SessionStart", "session-start", None),
+               "user-prompt-submit": ("UserPromptSubmit", "prompt", None), "stop": ("Stop", "stop", None)}
+TURN_PHASES = frozenset({"session-start", "prompt", "stop"})
 
 
 def _replace(text: str, old: str, new: str, replace_all: bool) -> str | None:
@@ -21,6 +24,8 @@ def _replace(text: str, old: str, new: str, replace_all: bool) -> str | None:
 
 def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None) -> list[Event]:
     """content: load file text for write/edit events; by default only when an enabled rule reads it."""
+    if phase in TURN_PHASES:
+        return [turn_event(payload, phase)]
     tool = payload.get("tool_name")
     ti = payload.get("tool_input") or {}
     cwd = payload.get("cwd") or None
@@ -56,8 +61,21 @@ def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None
     return [Event("edit", phase, path=path, before=before, after=after, cwd=cwd)]
 
 
+def turn_event(payload: dict[str, Any], phase: Phase) -> Event:
+    tasks = payload.get("background_tasks")
+    meta = {"permission_mode": payload.get("permission_mode"), "source": payload.get("source"),
+            "background_task_count": len(tasks) if isinstance(tasks, list) else 0,
+            "stop_hook_active": bool(payload.get("stop_hook_active"))}
+    sid = payload.get("session_id")
+    return Event("turn", phase, cwd=payload.get("cwd") or None, session_id=sid if isinstance(sid, str) else None,
+                 meta=meta)
+
+
 def _lines(findings) -> str:
     return "\n".join(f"[devkit {f.rule}] {f.message}" for f in findings)
+
+
+_TURN_HOOKS = frozenset(e for e, phase, _ in HOOK_EVENTS.values() if phase in TURN_PHASES)
 
 
 def response(outcome: Outcome, hook_event: str) -> dict[str, Any] | None:
@@ -75,5 +93,7 @@ def response(outcome: Outcome, hook_event: str) -> dict[str, Any] | None:
         return out
     if outcome.warnings or notes:
         text = "\n".join(t for t in (_lines(outcome.warnings), notes) if t)
+        if hook_event in _TURN_HOOKS:  # additionalContext would continue the turn, not just tell the user
+            return {"systemMessage": text}
         return {"systemMessage": text, "hookSpecificOutput": {"hookEventName": hook_event, "additionalContext": text}}
     return None

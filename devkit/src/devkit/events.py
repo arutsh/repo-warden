@@ -54,6 +54,7 @@ class Finding:
     message: str
     path: str | None = None
     line: int | None = None
+    max_level: Level = Level.BLOCK  # a notice that must never block, whatever the rule's level
 
 
 @dataclass

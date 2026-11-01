@@ -12,11 +12,13 @@ from devkit.events import Level
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    """Never read the real user config or agent settings."""
+    """Never read the real user config, agent settings or devkit cache."""
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CODEX_HOME", raising=False)
     return home

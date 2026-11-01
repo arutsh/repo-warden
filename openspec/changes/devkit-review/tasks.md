@@ -31,10 +31,10 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 3. Review state, the stop decision and the Claude turn hooks
 
-- [ ] 3.1 Implement the state file (D5): per-repo path, `fcntl` lock, atomic replace, a cap of 100 `reviewed` trees, pruning of sessions older than 7 days, keeping state on `resume`, and treating an invalid file as empty with a warning. Verify with unit tests for each of these, including two writers racing on the lock.
-- [ ] 3.2 Implement the stop state machine (D6) as a pure function from state, the current tree, settings and meta to a decision and new state. Verify with table tests for every spec scenario under "A review is triggered only for new, unreviewed changes", "Review rounds and how the loop ends" and "Stops that are never blocked". Also test that a turn is blocked at most `max_rounds` times when the agent records fixes every round.
-- [ ] 3.3 Wire the `review` rule's `check` for the `session-start`, `prompt` and `stop` phases to the snapshot (group 2) and the state machine (3.2). A missing stored tree means the baseline is reset (D5 or D6). Verify with temp-repo tests driving the three phases in order.
-- [ ] 3.4 Add `session-start`, `user-prompt-submit` and `stop` to the Claude adapter's `HOOK_EVENTS`, and map them to `turn` events with `meta`:
+- [x] 3.1 Implement the state file (D5): per-repo path, `fcntl` lock, atomic replace, a cap of 100 `reviewed` trees, pruning of sessions older than 7 days, keeping state on `resume`, and treating an invalid file as empty with a warning. Verify with unit tests for each of these, including two writers racing on the lock.
+- [x] 3.2 Implement the stop state machine (D6) as a pure function from state, the current tree, settings and meta to a decision and new state. Verify with table tests for every spec scenario under "A review is triggered only for new, unreviewed changes", "Review rounds and how the loop ends" and "Stops that are never blocked". Also test that a turn is blocked at most `max_rounds` times when the agent records fixes every round.
+- [x] 3.3 Wire the `review` rule's `check` for the `session-start`, `prompt` and `stop` phases to the snapshot (group 2) and the state machine (3.2). A missing stored tree means the baseline is reset (D5 or D6). Verify with temp-repo tests driving the three phases in order.
+- [x] 3.4 Add `session-start`, `user-prompt-submit` and `stop` to the Claude adapter's `HOOK_EVENTS`, and map them to `turn` events with `meta`:
   - a stop block prints `decision: "block"`;
   - a warn prints `systemMessage` only;
   - the end-of-loop summary and the not-completed and skipped notices print `systemMessage`.
@@ -46,7 +46,7 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - `background_tasks` not empty, which isn't blocked;
   - warn, which prints no block;
   - a snapshot failure, which exits 0 with a warning.
-- [ ] 3.5 Make install register the three turn hooks for Claude, with no matcher and a 30 s timeout, using the existing recognition and backup rules. Verify with installer tests on a temp `HOME`: idempotent, user hooks kept, uninstall removes only devkit's entries.
+- [x] 3.5 Make install register the three turn hooks for Claude, with no matcher and a 30 s timeout, using the existing recognition and backup rules. Verify with installer tests on a temp `HOME`: idempotent, user hooks kept, uninstall removes only devkit's entries.
 
 ## 4. The `devkit review` command and status
 
@@ -130,7 +130,7 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 - [ ] 9.1 Check the Codex docs for `SessionStart` and `UserPromptSubmit` and their payload fields. Then add `session-start`, `user-prompt-submit` and `stop` to the Codex adapter, with allow printed as `{}` and a block as `decision: "block"` (D12a). Verify with recorded-payload tests matching 3.4.
 - [ ] 9.2 Make the skill work under Codex: install it into Codex's skills directory, and run focuses one after another when subagents aren't available, saying so in the output. Verify in a live Codex session with the 8.1 checks.
-- [ ] 9.3 Run `codex exec review --help` to settle the subcommand and flags. Then add the `external: [codex]` setting (an "unknown setting" error until then), the background run, translation of its findings to the reviewer JSON, the shared checker, the notice when the binary or authentication is missing, and the second-session guard (D12b). Verify with:
+- [ ] 9.3 Run `codex exec review --help` to settle the subcommand and flags. Then add the `external: [codex]` setting (an "unknown setting" error until then), the background run, translation of its findings to the reviewer JSON, the shared checker, and the notice when the binary or authentication is missing. The second-session guard (D12b) already exists in the stop decision (3.2). Verify with:
   - a CLI-mocked test of the translation;
   - a live Claude session where Codex findings reach the checker;
   - a check that Codex's own Stop hook does not start a loop.
