@@ -196,3 +196,23 @@ def test_one_time_budget_for_the_whole_snapshot(committed, monkeypatch):
     with pytest.raises(GitError, match="out of time"):
         snapshot(committed, DEFAULT_PATTERNS)
     assert not cache_dir().exists() or list(cache_dir().iterdir()) == []
+
+
+def test_index_copy_keeps_the_index_mtime(committed, monkeypatch):
+    """Git only re-reads content for entries not older than the index; a fresh mtime on the copy would hide
+    a same-size edit made right after the index was written."""
+    import os
+
+    index = committed / ".git" / "index"
+    os.utime(index, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
+    seen = []
+    real = gitsafe.run
+
+    def spy(top, *args, env=None, **kw):
+        if args[:1] == ("add",):
+            seen.append(os.stat(env["GIT_INDEX_FILE"]).st_mtime_ns)
+        return real(top, *args, env=env, **kw)
+
+    monkeypatch.setattr(gitsafe, "run", spy)
+    snapshot(committed, DEFAULT_PATTERNS)
+    assert seen == [1_000_000_000_000_000_000]

@@ -111,6 +111,7 @@ def on_stop(data: State, sid: str, cur: str, *, level: Literal["warn", "block"],
         totals = loop["totals"] = {k: loop["totals"].get(k, 0) + rec.get(k, 0) for k in ("fixed", "open")}
         if rec.get("fixed", 0) == 0 or n >= loop["max"]:
             _end(data, s, cur)
+            data["last_review"] = {"at": now.isoformat(), "session": sid}  # repo-level: outlives the session
             return data, Decision("notice", f"review: {_plural(n, 'round')}, {totals['fixed']} fixed, "
                                             f"{totals['open']} to discuss")
         s["loop"] = {**loop, "round": n + 1, "from": loop["at"], "at": cur, "record": None}

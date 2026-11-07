@@ -58,9 +58,13 @@ def _session(s: Any) -> bool:
             and isinstance(s.get("updated"), str) and _loop(s.get("loop")))
 
 
+def _last_review(v: Any) -> bool:
+    return v is None or (isinstance(v, dict) and isinstance(v.get("at"), str) and isinstance(v.get("session"), str))
+
+
 def _valid(data: Any) -> bool:
     """Every field the state machine reads has its expected shape, so a hand-edited file can't crash it."""
-    return (isinstance(data, dict) and isinstance(data.get("reviewed"), list)
+    return (isinstance(data, dict) and _last_review(data.get("last_review")) and isinstance(data.get("reviewed"), list)
             and all(_tree(t) for t in data["reviewed"])
             and isinstance(data.get("sessions"), dict)
             and all(isinstance(k, str) and _session(s) for k, s in data["sessions"].items()))

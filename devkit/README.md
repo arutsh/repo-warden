@@ -245,8 +245,68 @@ skips that file.
 
 ### `review` (style, default `off`)
 
-Work in progress (the `devkit-review` change). The full description comes with the `devkit review`
-command.
+When the agent tries to stop after changing code, devkit blocks the stop once per review round and
+tells the agent to run the `devkit-review` skill on its changes. The hook only decides; the agent
+and its reviewer subagents do the reviewing. This is early feedback, not enforcement.
+
+**What triggers a review.** With `review: block` and the repo in scope, a stop starts a review only
+when the working-tree snapshot differs from the one taken when the turn started, has not been
+reviewed already, and at least one changed path (since the last reviewed snapshot, else the
+session's start) does not match `skip_paths`. These never trigger one: a question-only turn,
+changes that existed before the session, a change that was restored exactly, a docs-only change
+covered by `skip_paths`, plan mode, running background tasks, and a directory that is not a git
+repo. With `warn`, the stop goes ahead and the user is told once per snapshot that the changes are
+unreviewed; the agent is not made to continue. Any failure (snapshot, state file, config) lets the
+stop go ahead with a one-line warning.
+
+**Rounds.** A loop runs at most `max_rounds` rounds. Round 1 covers the changes since the last
+review; each later round covers only the previous round's fixes. The loop ends when a round is
+recorded with no fixes or `max_rounds` is reached. If the agent stops without recording a requested
+round, the loop ends and the user is told the round was not completed. Either way the user sees a
+one-line summary, and the last snapshot counts as reviewed.
+
+```yaml
+# ~/.config/devkit/config.yaml, or <repo>/.devkit.yaml
+rules:
+  review:
+    level: block          # off (default) | warn | block
+    max_rounds: 3         # 1 to 5
+    skip_paths: ["**/*.md", "docs/**"]
+    reviewers:            # focus: model (opus | sonnet | haiku | inherit)
+      correctness: opus
+      rules: sonnet
+      tests: sonnet
+      security: sonnet
+      history: sonnet
+    followup_reviewers: [correctness]   # the focuses that run in rounds 2 and later
+    checker: opus
+```
+
+A focus in `followup_reviewers` that `reviewers` leaves out still runs in follow-up rounds, on its
+default model. An unknown focus or model, or `max_rounds` outside 1 to 5, is a config error.
+
+**`devkit review`** is what the skill calls; it finds the repo from the current directory. When more
+than one session has an active loop, pass `--session <id>` (the hook's block message includes it).
+All of these except `reset` and `plan --start` exit non-zero, with a message, when no loop is active.
+
+| Command | Does |
+|---|---|
+| `plan` | prints the active round as JSON: round, `max`, `session`, the focuses with their models (all in round 1, `followup_reviewers` after), the `checker` model and the `scope` command |
+| `plan --start` | the same, starting a loop first when none is active (on-demand review of the changes since the last review). It attaches to the most recently active session; with no session known it refuses, so pass `--session <id>` to name one (a session devkit has not seen reviews the changes since `HEAD`) |
+| `diff` | the `--stat` and patch the active round covers, with `secrets` paths left out |
+| `record` | reads a JSON array of findings on stdin and records the round. Each has `focus`, `model`, `claim`, `outcome` (`fixed`, `discuss`, `question` or `dropped`), and, unless dropped, `file`, `line` and a `score` of 0 to 100. A dropped finding needs a `reason` and may leave out `file`, `line` and `score`. The fixed, open (`discuss` plus `question`) and dropped counts are derived from the findings. Invalid input is rejected and nothing is recorded. A round is recorded once: a second `record` or `skip` for it is refused |
+| `skip --reason TEXT` | ends the review without one, for when the user asked; the next stop tells the user it was skipped and why |
+| `reset` | clears this repo's review state |
+
+`devkit status` shows the review settings with their sources, and, once the repo has review state,
+whether a loop is active (and its round) and when a review last completed.
+
+**State and cache.** State lives in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/<hash of the repo
+path>.json`, outside the repo, with the snapshot index copies. It keeps the last 100 reviewed trees
+and drops sessions idle for 7 days. `devkit review reset` deletes it.
+
+**Not a security boundary.** The agent can run `devkit review record` or `skip` without reviewing
+anything. Skips and uncompleted rounds are always shown to the user, but nothing stops them.
 
 **Snapshots.** A snapshot of the working tree is a git tree id. It holds the tracked and untracked,
 non-ignored files, minus every path that matches the `secrets` patterns. It is built through a copy

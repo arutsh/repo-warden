@@ -50,7 +50,7 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 4. The `devkit review` command and status
 
-- [ ] 4.1 Implement these subcommands, with `--session` when more than one loop is active (D7):
+- [x] 4.1 Implement these subcommands, with `--session` when more than one loop is active (D7):
   - `plan` (and `--start` for on-demand runs);
   - `diff`;
   - `skip --reason`;
@@ -63,9 +63,9 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - `diff` for round 2 shows only the round-1 fixes ("Follow-up scope");
   - "Skip is visible";
   - each subcommand exits non-zero when no loop is active.
-- [ ] 4.2 Implement `record`: it reads a findings JSON array on stdin, validates the fields and outcomes, and derives the counts. Verify with tests for "Counts derived from findings", invalid JSON rejected with nothing recorded, and "Record outside a loop".
-- [ ] 4.3 Extend `devkit status` with the review settings, their sources, the active loop and round, and the last completed review. Verify with the "Active loop shown" scenario.
-- [ ] 4.4 Add the review section to the devkit README: what triggers a review, what doesn't, rounds, the config keys with an example, the `devkit review` subcommands, state and cache locations, and "not a security boundary". Verify that the README's example config loads with `devkit status`.
+- [x] 4.2 Implement `record`: it reads a findings JSON array on stdin, validates the fields and outcomes, and derives the counts. Verify with tests for "Counts derived from findings", invalid JSON rejected with nothing recorded, and "Record outside a loop".
+- [x] 4.3 Extend `devkit status` with the review settings, their sources, the active loop and round, and the last completed review. Verify with the "Active loop shown" scenario.
+- [x] 4.4 Add the review section to the devkit README: what triggers a review, what doesn't, rounds, the config keys with an example, the `devkit review` subcommands, state and cache locations, and "not a security boundary". Verify that the README's example config loads with `devkit status`.
 
 ## 5. Review logs
 

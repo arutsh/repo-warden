@@ -48,7 +48,9 @@ def snapshot(top: str | os.PathLike, secret_patterns: Iterable[str], timeout_s: 
     tmp = Path(tempfile.mkdtemp(prefix="index-", dir=d))
     try:
         if index.is_file():  # a fresh repo has no index yet; the copy keeps the stat cache warm
-            shutil.copyfile(index, tmp / "index")
+            # copy2 keeps the index's mtime: git re-reads content only for files not older than the index,
+            # so a fresh mtime would hide same-size edits made right after it was written.
+            shutil.copy2(index, tmp / "index")
         env["GIT_INDEX_FILE"] = str(tmp / "index")
         if patterns:  # a tracked secret stays in the copied index unless removed; `add` alone would keep it
             git("rm", "--cached", "-r", "-f", "-q", "--ignore-unmatch", "--",
