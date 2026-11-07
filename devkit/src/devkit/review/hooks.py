@@ -10,7 +10,7 @@ from typing import Any
 from .. import engine, gitsafe
 from ..events import Event, Finding, Level
 from ..rules.secrets import DEFAULT_PATTERNS
-from . import machine, snapshot, state
+from . import log, machine, snapshot, state
 
 
 def secret_patterns(cfg) -> list[str]:
@@ -40,6 +40,8 @@ def handle(event: Event, settings: Mapping[str, Any], *, now: datetime | None = 
         elif event.phase == "prompt":
             new, decision = machine.on_prompt(data, sid, cur, now)
         elif snapshot.missing(top, machine.trees(data, sid), timeout_s=left()):
+            if loop := data["sessions"][sid].get("loop"):  # its trees are gone, so it ends unreviewed
+                decision = machine.Decision(events=(machine.ended(sid, loop, "not_completed", pending=True),))
             new = machine.forget(data, sid, cur, now)
         else:
             new, decision = machine.on_stop(
@@ -48,6 +50,7 @@ def handle(event: Event, settings: Mapping[str, Any], *, now: datetime | None = 
                 changed=lambda a, b: snapshot.changed_paths(top, a, b, secrets, timeout_s=left()))
         data.clear()
         data.update(new)
+    log.write(log.event_records(top, decision.events, now), settings, now=now)
     if decision.action == "allow":
         return []
     return [Finding("review", decision.message, max_level=Level.BLOCK if decision.action == "block" else Level.WARN)]

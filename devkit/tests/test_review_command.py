@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import subprocess
 
 import pytest
@@ -199,7 +200,9 @@ def test_record_derives_counts(in_repo, capsys, monkeypatch):
     findings = [finding("fixed"), finding("discuss"),
                 finding("dropped", reason="no evidence", file=None, line=None, score=None)]
     code, out, _ = run(capsys, monkeypatch, "record", stdin=json.dumps(findings))
-    assert code == 0 and out == "recorded: 1 fixed, 1 open, 1 dropped\n"
+    lines = out.splitlines()
+    assert code == 0 and lines[0] == "recorded: 1 fixed, 1 open, 1 dropped"
+    assert re.fullmatch(r"open finding ids: f-[0-9a-f]{8}", lines[1]) and len(lines) == 2
     assert loop(in_repo)["record"] == {"fixed": 1, "open": 1, "dropped": 1}
 
 

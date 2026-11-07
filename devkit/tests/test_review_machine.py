@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -37,8 +38,9 @@ def test_question_only_turn():
 def test_turn_that_edits_code_blocks_with_round_1():
     data, d = stop(turn("T0"), "T1")
     assert d.action == "block" and "round 1 of 3" in d.message and "devkit review plan --session s1" in d.message
-    assert data["sessions"]["s1"]["loop"] == {"round": 1, "max": 3, "from": "T0", "at": "T1", "record": None,
-                                              "totals": {"fixed": 0, "open": 0}}
+    loop = dict(data["sessions"]["s1"]["loop"])
+    assert re.fullmatch(r"l-[0-9a-f]{12}", loop.pop("id"))
+    assert loop == {"round": 1, "max": 3, "from": "T0", "at": "T1", "record": None, "totals": {"fixed": 0, "open": 0}}
 
 
 def test_already_reviewed():
@@ -213,3 +215,46 @@ def test_trees_are_the_ones_the_next_stop_diffs_from():
     assert machine.trees(data, "s1") == ["R", "T2"]
     assert machine.trees(data, "other") == []
     assert machine.forget(data, "s1", "T9", NOW)["sessions"]["s1"]["baseline"] == "T9"
+
+
+def names(d):
+    return [(name, e["loop"]["round"], e.get("reason")) for name, e in d.events]
+
+
+def test_loop_events_name_one_loop_through_its_rounds():
+    data, d = stop(turn("T0"), "T1")
+    assert names(d) == [("loop_started", 1, None), ("round_requested", 1, None)]
+    lid = data["sessions"]["s1"]["loop"]["id"]
+    assert d.events[0][1]["trigger"] == "stop" and d.events[0][1]["max_rounds"] == 3
+    data, d = stop(record(data, fixed=1, open=0, dropped=0), "T2")
+    assert names(d) == [("round_requested", 2, None)] and data["sessions"]["s1"]["loop"]["id"] == lid
+    data, d = stop(record(data, fixed=0, open=1, dropped=0), "T2")
+    assert names(d) == [("loop_ended", 2, "clean")]
+    assert {e["loop"]["id"] for _, e in d.events} == {lid} and d.events[0][1]["session"] == "s1"
+    assert (d.events[0][1]["fixed"], d.events[0][1]["open"]) == (1, 1)
+
+
+@pytest.mark.parametrize("rec, reason", [(None, "not_completed"), ({"skipped": "user asked"}, "skipped"),
+                                         ({"fixed": 1, "open": 0, "dropped": 0}, "max_rounds")])
+def test_loop_ended_reasons(rec, reason):
+    data, _ = stop(turn("T0"), "T1", max_rounds=1)
+    if rec is not None:
+        record(data, **rec)
+    assert names(stop(data, "T2", max_rounds=1)[1]) == [("loop_ended", 1, reason)]
+
+
+def test_interrupted_loop_ends_not_completed():
+    data, _ = stop(turn("T0"), "T1")
+    assert names(machine.on_prompt(data, "s1", "T1", NOW)[1]) == [("loop_ended", 1, "not_completed")]
+
+
+def test_allowed_stops_have_no_events():
+    assert stop(turn("T0"), "T0")[1].events == ()
+
+
+def test_loop_ended_early_counts_its_recorded_round():
+    data, _ = stop(turn("T0"), "T1")
+    data, _ = stop(record(data, fixed=2, open=0, dropped=0), "T2")
+    record(data, fixed=1, open=1, dropped=0)  # round 2 recorded, then the user interrupts before the stop
+    e = machine.on_prompt(data, "s1", "T2", NOW)[1].events[0][1]
+    assert (e["reason"], e["fixed"], e["open"]) == ("not_completed", 3, 1)

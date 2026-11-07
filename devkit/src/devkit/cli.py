@@ -176,14 +176,19 @@ def main(argv: list[str] | None = None) -> int:
                        ("diff", "the diff the active round covers"),
                        ("record", "record the round's findings (a JSON array on stdin)"),
                        ("skip", "mark the review skipped (the user asked); the next stop says so"),
+                       ("verdict", "log the user's verdict on a finding up for discussion"),
                        ("reset", "clear this repo's review state")):
         rp = rsub.add_parser(name, help=text)
-        if name != "reset":
+        if name not in ("reset", "verdict"):
             rp.add_argument("--session", help="required when more than one loop is active in the repo")
         if name == "plan":
             rp.add_argument("--start", action="store_true", help="start a loop now if none is active (on demand)")
         if name == "skip":
             rp.add_argument("--reason", required=True, help="why; shown to the user")
+        if name == "verdict":
+            rp.add_argument("finding_id", help="the id `record` printed, e.g. f-3a9c01de")
+            rp.add_argument("verdict", choices=["accepted", "rejected"])
+            rp.add_argument("--note", help="why; kept only when the user config sets rules.review.log_content")
 
     p = sub.add_parser("init", help="opt this repo in: write .devkit.yaml (never overwrites)")
     p.add_argument("--agents-md", action="store_true", help="also AGENTS.md, and CLAUDE.md importing it")

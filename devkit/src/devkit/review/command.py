@@ -1,4 +1,4 @@
-"""`devkit review plan | diff | record | skip | reset`: what the devkit-review skill calls during a round."""
+"""`devkit review plan | diff | record | skip | verdict | reset`: what the devkit-review skill calls in a round."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any, TextIO
 from .. import config, gitsafe
 from ..repo import find_top
 from ..rules.review import FOCUSES, MODELS, Review
-from . import hooks, snapshot, state
+from . import hooks, log, machine, snapshot, state
 
 OUTCOMES = ("fixed", "discuss", "question", "dropped")
 
@@ -67,8 +67,7 @@ def _start(top, data: dict[str, Any], session: str | None, settings: dict[str, A
         base = s["baseline"] = cur
     if cur == base or cur in data["reviewed"]:
         raise ReviewError("nothing to review: no changes since the last reviewed snapshot")
-    s["loop"] = {"round": 1, "max": settings["max_rounds"], "from": base, "at": cur, "record": None,
-                 "totals": {"fixed": 0, "open": 0}}
+    s["loop"] = machine.new_loop(sid, base, cur, settings["max_rounds"], now)
     s["updated"] = now.isoformat()
     return sid
 
@@ -78,11 +77,14 @@ def plan(top, settings: dict[str, Any], secrets: list[str], session: str | None,
     cur = snapshot.snapshot(top, secrets) if start else ""  # a slow snapshot must not hold the lock the hooks wait on
     with state.locked(top, now=now) as data:
         running = bool(_active(data)) if session is None else bool((data["sessions"].get(session) or {}).get("loop"))
+        events = ()
         if start and not running:
             sid = _start(top, data, session, settings, cur, now)
+            events = machine.started(sid, data["sessions"][sid]["loop"], "on_demand")
         else:
             sid = _pick(data, session)
         loop = data["sessions"][sid]["loop"]
+    log.write(log.event_records(top, events, now), settings, now=now)
     reviewers = dict(settings["reviewers"]) if loop["round"] == 1 else followup(settings)
     json.dump({"active": True, "round": loop["round"], "max": loop["max"], "session": sid, "reviewers": reviewers,
                "checker": settings["checker"], "scope": f"devkit review diff --session {shlex.quote(sid)}"},
@@ -99,19 +101,26 @@ def diff(top, secrets: list[str], session: str | None, out: TextIO) -> None:
         raise ReviewError(f"cannot diff round {loop['round']}: {e}") from e
 
 
-def _set_record(data: dict[str, Any], session: str | None, rec: dict[str, Any]) -> None:
-    """A round's record is written once, so a recorded skip can't be replaced by a review summary or back."""
-    loop = data["sessions"][_pick(data, session)]["loop"]
+def _set_record(data: dict[str, Any], session: str | None, rec: dict[str, Any]) -> dict[str, Any]:
+    """A round's record is written once, so a recorded skip can't be replaced by a review summary or back.
+    Returns the log context of the round."""
+    sid = _pick(data, session)
+    loop = data["sessions"][sid]["loop"]
     if loop["record"] is not None:
         raise ReviewError(f"round {loop['round']} is already recorded; nothing changed")
     loop["record"] = rec
+    return log.context(sid, loop)
 
 
-def skip(top, session: str | None, reason: str) -> None:
+def skip(top, settings: dict[str, Any], session: str | None, reason: str) -> None:
     if not reason.strip():
         raise ReviewError("--reason must say why the review is skipped")
-    with state.locked(top) as data:
-        _set_record(data, session, {"skipped": reason.strip()})
+    now = datetime.now(timezone.utc)
+    with state.locked(top, now=now) as data:
+        ctx = _set_record(data, session, {"skipped": reason.strip()})
+    note = reason.strip() if settings["log_content"] else None
+    log.write([log.make(top, "round_recorded", {**ctx, log.PREFIX + "skipped": True, log.PREFIX + "note": note},
+                        f"review round {ctx[log.PREFIX + 'round']} skipped", now)], settings, now=now)
 
 
 def _int(v: Any) -> bool:
@@ -162,7 +171,9 @@ def counts(findings: list[dict[str, Any]]) -> dict[str, int]:
     return {"fixed": n.count("fixed"), "open": n.count("discuss") + n.count("question"), "dropped": n.count("dropped")}
 
 
-def record(top, session: str | None, stdin: TextIO) -> dict[str, int]:
+def record(top, settings: dict[str, Any], secrets: list[str], session: str | None,
+           stdin: TextIO) -> tuple[dict[str, int], list[str]]:
+    """The round's counts, and the logged ids of the findings left open (for the skill's To discuss list)."""
     try:
         findings = json.load(stdin)
     except (ValueError, RecursionError) as e:  # as in state.read: a deeply nested array overflows the parser
@@ -170,9 +181,40 @@ def record(top, session: str | None, stdin: TextIO) -> dict[str, int]:
     problems = validate_findings(findings)
     if problems:
         raise ReviewError("findings rejected, nothing recorded:\n  " + "\n  ".join(problems))
-    with state.locked(top) as data:
-        _set_record(data, session, rec := counts(findings))
-    return rec
+    now = datetime.now(timezone.utc)
+    with state.locked(top, now=now) as data:
+        ctx = _set_record(data, session, rec := counts(findings))
+    p = log.PREFIX
+    out = [log.make(top, "round_recorded", {**ctx, **{p + k: v for k, v in rec.items()}},
+                    f"review round {ctx[p + 'round']} recorded", now)]
+    out += [log.finding_record(top, ctx, f, content=settings["log_content"], secrets=secrets, now=now)
+            for f in findings]
+    if not log.write(out, settings, now=now):
+        return rec, []  # an id that wasn't logged can't take a verdict
+    return rec, [r["attributes"][p + "finding_id"] for r in out[1:]
+                 if r["attributes"][p + "outcome"] in ("discuss", "question")]
+
+
+def verdict(top, settings: dict[str, Any], fid: str, value: str, note: str | None) -> None:
+    """A verdict on a finding recorded within the retention period; nothing is written if there is none."""
+    if not settings["log"]:
+        raise ReviewError("review logging is off (rules.review.log: false), so no finding can be found")
+    p = log.PREFIX
+    found = None
+    for r in log.read(settings["log_retention_days"]):
+        a = r["attributes"]
+        if a.get("event.name") == p + "finding" and a.get(p + "finding_id") == fid:
+            found = a
+    if found is None:
+        raise ReviewError(f"no finding {fid} was recorded in the last {settings['log_retention_days']} days")
+    # The finding's repo, not the one verdict runs in: attrs override make's repo_attrs(top).
+    keep = ("devkit.repo.name", "devkit.repo.path_hash", "session.id", p + "loop_id", p + "round", p + "focus",
+            p + "model", p + "outcome", "code.file.path", "code.line.number")
+    attrs = {**{k: found[k] for k in keep if k in found}, p + "finding_id": fid, p + "verdict": value,
+             p + "note": note if note and settings["log_content"] else None}
+    now = datetime.now(timezone.utc)
+    if not log.write([log.make(top, "verdict", attrs, f"finding {fid} {value}", now)], settings, now=now):
+        raise ReviewError("the verdict was not recorded")
 
 
 def reset(top) -> bool:
@@ -194,11 +236,16 @@ def run(args, stdin: TextIO, out: TextIO, err: TextIO) -> int:
         elif sub == "diff":
             diff(top, secrets, args.session, out)
         elif sub == "record":
-            rec = record(top, args.session, stdin)
+            rec, open_ids = record(top, settings, secrets, args.session, stdin)
             print(f"recorded: {rec['fixed']} fixed, {rec['open']} open, {rec['dropped']} dropped", file=out)
+            if open_ids:
+                print("open finding ids: " + " ".join(open_ids), file=out)
         elif sub == "skip":
-            skip(top, args.session, args.reason)
+            skip(top, settings, args.session, args.reason)
             print("review skipped; the next stop goes ahead and tells the user why", file=out)
+        elif sub == "verdict":
+            verdict(top, settings, args.finding_id, args.verdict, args.note)
+            print(f"verdict recorded: {args.finding_id} {args.verdict}", file=out)
         else:
             print("review state cleared" if reset(top) else "no review state to clear", file=out)
     except (ReviewError, gitsafe.GitError, state.LockTimeout, OSError) as e:

@@ -287,15 +287,17 @@ default model. An unknown focus or model, or `max_rounds` outside 1 to 5, is a c
 
 **`devkit review`** is what the skill calls; it finds the repo from the current directory. When more
 than one session has an active loop, pass `--session <id>` (the hook's block message includes it).
-All of these except `reset` and `plan --start` exit non-zero, with a message, when no loop is active.
+All of these except `reset`, `verdict` and `plan --start` exit non-zero, with a message, when no loop is
+active.
 
 | Command | Does |
 |---|---|
 | `plan` | prints the active round as JSON: round, `max`, `session`, the focuses with their models (all in round 1, `followup_reviewers` after), the `checker` model and the `scope` command |
 | `plan --start` | the same, starting a loop first when none is active (on-demand review of the changes since the last review). It attaches to the most recently active session; with no session known it refuses, so pass `--session <id>` to name one (a session devkit has not seen reviews the changes since `HEAD`) |
 | `diff` | the `--stat` and patch the active round covers, with `secrets` paths left out |
-| `record` | reads a JSON array of findings on stdin and records the round. Each has `focus`, `model`, `claim`, `outcome` (`fixed`, `discuss`, `question` or `dropped`), and, unless dropped, `file`, `line` and a `score` of 0 to 100. A dropped finding needs a `reason` and may leave out `file`, `line` and `score`. The fixed, open (`discuss` plus `question`) and dropped counts are derived from the findings. Invalid input is rejected and nothing is recorded. A round is recorded once: a second `record` or `skip` for it is refused |
+| `record` | reads a JSON array of findings on stdin and records the round. Each has `focus`, `model`, `claim`, `outcome` (`fixed`, `discuss`, `question` or `dropped`), and, unless dropped, `file`, `line` and a `score` of 0 to 100. A dropped finding needs a `reason` and may leave out `file`, `line` and `score`. The fixed, open (`discuss` plus `question`) and dropped counts are derived from the findings. Invalid input is rejected and nothing is recorded. A round is recorded once: a second `record` or `skip` for it is refused. It prints the counts and, when they were logged, the ids of the findings left open |
 | `skip --reason TEXT` | ends the review without one, for when the user asked; the next stop tells the user it was skipped and why |
+| `verdict ID accepted\|rejected [--note TEXT]` | logs your verdict on a finding up for discussion (see [Review logs](#review-logs)) |
 | `reset` | clears this repo's review state |
 
 `devkit status` shows the review settings with their sources, and, once the repo has review state,
@@ -303,7 +305,8 @@ whether a loop is active (and its round) and when a review last completed.
 
 **State and cache.** State lives in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/<hash of the repo
 path>.json`, outside the repo, with the snapshot index copies. It keeps the last 100 reviewed trees
-and drops sessions idle for 7 days. `devkit review reset` deletes it.
+and drops sessions idle for 7 days. `devkit review reset` deletes it, but not the review logs in
+`logs/` beside it (see [Review logs](#review-logs)).
 
 **Not a security boundary.** The agent can run `devkit review record` or `skip` without reviewing
 anything. Skips and uncompleted rounds are always shown to the user, but nothing stops them.
@@ -326,6 +329,93 @@ one-line warning, and no review runs.
 devkit builds the tree objects itself and writes them with `git hash-object`, which the guard
 allows. The id is the same one `write-tree` would give. `~/.cache` is writable inside cplt, objects
 can be written to `.git/objects`, and no ref changes.
+
+## Review logs
+
+devkit appends a record for each step of a review loop to a daily file,
+`${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/<YYYY-MM-DD>.jsonl` (UTC dates), one JSON object per
+line. They sit next to the review state because `~/.cache` is writable inside cplt and
+`~/.local/state` is not (checked 2026-11-07). A cache cleaner that empties `~/.cache` deletes them too.
+devkit records only what the agent's own telemetry can't know: loops, rounds, findings, scores,
+outcomes and verdicts. Cost, tokens and durations come from Claude Code's OpenTelemetry export. The
+logs stay on this machine; devkit never sends them anywhere.
+
+Records follow the OpenTelemetry log data model: `timestamp` (RFC 3339, nanoseconds),
+`severity_text`, `severity_number`, `body`, `resource` (`service.name: devkit` and its version) and
+`attributes`. Every record's attributes carry `event.name`, `session.id` (the agent's session id),
+`devkit.review.loop_id`, `devkit.review.round`, and the repo as `devkit.repo.name` (its directory
+name) and `devkit.repo.path_hash` (a hash of its path). The home path never appears; an absolute
+file path in a finding is made repo-relative, or written with `~` for the home directory.
+
+| `event.name` | When | Its own attributes (under `devkit.review.`) |
+|---|---|---|
+| `devkit.review.loop_started` | a stop (or `plan --start`) starts a loop | `trigger` (`stop` or `on_demand`), `max_rounds` |
+| `devkit.review.round_requested` | a round is asked for | |
+| `devkit.review.round_recorded` | `record` or `skip` | `fixed`, `open`, `dropped`, or `skipped: true` |
+| `devkit.review.finding` | `record`, one per finding | `finding_id`, `focus`, `model`, `outcome`, `score` (when checked), plus `code.file.path` and `code.line.number` |
+| `devkit.review.loop_ended` | the loop ends | `reason` (`clean`, `max_rounds`, `not_completed` or `skipped`), the loop's total `fixed` and `open` |
+| `devkit.review.verdict` | `devkit review verdict` | `finding_id`, `verdict`, and the finding's repo, session, loop, round, focus, model, outcome and path |
+
+A `finding` record, as written by default:
+
+```json
+{
+  "timestamp": "2026-11-07T17:02:50.262215000Z",
+  "severity_text": "INFO",
+  "severity_number": 9,
+  "body": "finding f-67b859f2 fixed",
+  "resource": {"service.name": "devkit", "service.version": "0.2.0"},
+  "attributes": {
+    "event.name": "devkit.review.finding",
+    "devkit.repo.name": "repo",
+    "devkit.repo.path_hash": "01097951bd818d59",
+    "session.id": "0f5c7c1e-8d1a-4c2b-9a51-3b7f2d9e6a10",
+    "devkit.review.loop_id": "l-fbccb88df205",
+    "devkit.review.round": 1,
+    "devkit.review.finding_id": "f-67b859f2",
+    "devkit.review.focus": "correctness",
+    "devkit.review.model": "opus",
+    "devkit.review.outcome": "fixed",
+    "devkit.review.score": 80,
+    "code.file.path": "src/app.py",
+    "code.line.number": 1
+  }
+}
+```
+
+**Content.** By default no record holds text from the code or the review: no quote, claim, failure
+scenario, drop reason or note. With `log_content: true` in the user config, finding records also carry
+`devkit.review.quote`, `devkit.review.claim`, `devkit.review.failure_scenario` and (when dropped)
+`devkit.review.drop_reason`, a skip carries its reason and a verdict its `--note`, as
+`devkit.review.note`. The home directory is written as `~` wherever it appears in a record. A finding on a path that matches the
+`secrets` patterns never carries text, even then. Only the user config can turn `log_content` on: in
+`.devkit.yaml` it is ignored, and `devkit status` lists it under "ignored settings".
+
+```yaml
+# ~/.config/devkit/config.yaml
+rules:
+  review:
+    log: true                # false: write no records at all
+    log_content: false       # user config only
+    log_retention_days: 30   # files older than this are deleted on the next write
+```
+
+**Retention.** Each write deletes the day files older than `log_retention_days` (default 30).
+
+**Failures.** A record that can't be written (directory not writable, lock held for over 2 s) gives a
+one-line `devkit:` warning on stderr. The hook or command that wrote it goes on as if it had
+succeeded; only `verdict`, whose whole job is the record, then exits non-zero.
+
+**Verdicts.** `devkit review record` prints the ids of the findings left open (`discuss` or
+`question`), and the skill shows each one in its To discuss list. It prints none when the records
+weren't written (`log: false`, or a failed write), since a verdict could not find them. The id covers
+the loop, round, focus, path, line and claim. Once you've decided, run
+`devkit review verdict <finding_id> accepted|rejected [--note TEXT]`. It finds the finding in the logs
+within the retention period and appends a `verdict` record that names it, so the dashboard can show
+how often discussed findings from each focus and model turn out to be right. An id that wasn't
+recorded within the retention period exits non-zero and writes nothing, and so does `verdict` with
+`log: false`. `--note` is kept only with `log_content`. A verdict can be given on any recorded
+finding, a fixed one included, and given again: the dashboard counts the latest one per finding.
 
 ## Claude Code mapping
 

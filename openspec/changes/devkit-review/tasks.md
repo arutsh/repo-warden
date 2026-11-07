@@ -69,18 +69,18 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 5. Review logs
 
-- [ ] 5.1 Implement the log writer (D10):
-  - daily JSONL under `XDG_STATE_HOME`, in the OTel log data model shape;
+- [x] 5.1 Implement the log writer (D10):
+  - daily JSONL under `${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/` (`~/.local/state` is read-only in cplt), in the OTel log data model shape;
   - `O_APPEND` writes under an `fcntl` lock;
   - repo name plus path hash, with no home path;
   - retention cleanup on write;
   - a failed write gives a warning and never fails the hook.
 
   Verify with tests for "A round produces finding records", "Log write failure", "Retention", and a check that no record contains `$HOME`.
-- [ ] 5.2 Emit `loop_started`, `round_requested`, `round_recorded`, `finding` and `loop_ended` from the state machine and `record`, with a stable `finding_id`. Verify that a temp-repo run of two rounds produces the expected record sequence and that all of them share the same `loop_id`.
-- [ ] 5.3 Enforce the content controls: quote, claim, failure scenario and note are logged only when the user config sets `log_content`, and `log: false` writes nothing. Verify with "Default records leave out text", "Repo can't turn on content logging", and a `log: false` test.
-- [ ] 5.4 Implement `devkit review verdict <id> accepted|rejected [--note]`. Verify with "Rejecting a finding" and "Unknown finding".
-- [ ] 5.5 Add the logging section to the devkit README: the file location, the record fields, what `log_content` adds, retention, and how `verdict` is used. Verify that the README's sample record matches a record written by the 5.2 test (same keys).
+- [x] 5.2 Emit `loop_started`, `round_requested`, `round_recorded`, `finding` and `loop_ended` from the state machine and `record`, with a stable `finding_id`. Verify that a temp-repo run of two rounds produces the expected record sequence and that all of them share the same `loop_id`.
+- [x] 5.3 Enforce the content controls: quote, claim, failure scenario and note are logged only when the user config sets `log_content`, and `log: false` writes nothing. Verify with "Default records leave out text", "Repo can't turn on content logging", and a `log: false` test.
+- [x] 5.4 Implement `devkit review verdict <id> accepted|rejected [--note]`. Verify with "Rejecting a finding" and "Unknown finding".
+- [x] 5.5 Add the logging section to the devkit README: the file location, the record fields, what `log_content` adds, retention, and how `verdict` is used. Verify that the README's sample record matches a record written by the 5.2 test (same keys).
 
 ## 6. Review skill, reviewer agents and their install
 
@@ -88,12 +88,12 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 - [ ] 6.2 Write `claude_assets/skills/devkit-review/SKILL.md`, following the spec's eight-step process:
   - `plan` and `diff`;
   - parallel reviewers that are never forks, passing `model` from `plan`;
-  - the prompt contract with no main-session reasoning;
+  - the prompt contract with no main-session reasoning, and rule files passed as paths, never pasted;
   - dropping findings without evidence;
   - the checker, at most 10 at a time;
   - the definition of an obvious fix, no commit, re-running tests;
   - Fixed, To discuss (with finding ids) and Dropped;
-  - piping findings into `record`, and `verdict` on user answers;
+  - writing findings to a JSON file in the scratch directory and running `record < file` (never inline JSON in the command), and `verdict` on user answers;
   - on-demand use through `plan --start`.
 
   Verify by reviewing it against each spec scenario under "The review skill's process", and with a test that every `devkit review` command the skill mentions exists in the CLI parser.
@@ -104,7 +104,7 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 - [ ] 7.1 Write `devkit/telemetry/compose.yaml`, using `grafana/otel-lgtm` pinned to a tag at least two weeks old. Ports are bound to `127.0.0.1`, and the log directory and `collector.yaml` are mounted read-only. Write `collector.yaml` with `filelog` (`json_parser`) → Loki and OTLP → Prometheus/Loki, and no other exporters (D11). Verify with `docker compose config`, the stack starting, and `ss -ltn` showing only loopback listeners ("Not exposed on the network").
 - [ ] 7.2 Verify that the hook's `session_id` equals the `session.id` that Claude Code puts in its own OTel events, by running one Claude session with telemetry pointed at the stack. Record the result in `telemetry/README.md`. If they differ, have the dashboard leave out the joined panels and say so in the README.
-- [ ] 7.3 Build `dashboards/devkit-review.json`, provisioned automatically, with the activity, findings, quality and cost panels from the spec and D11. Verify by recording a sample round (from the 5.2 fixture) and seeing every devkit panel show data in Grafana. Then check that the cost panels show `devkit-review-*` series after one live review with the detailed env block.
+- [ ] 7.3 Build `dashboards/devkit-review.json`, provisioned automatically, with the activity, findings, quality and cost panels from the spec and D11. The acceptance panel counts only the latest verdict per `finding_id`, on `discuss` and `question` findings. Verify by recording a sample round (from the 5.2 fixture) and seeing every devkit panel show data in Grafana. Then check that the cost panels show `devkit-review-*` series after one live review with the detailed env block.
 - [ ] 7.4 Write `devkit/telemetry/README.md`, linked from the devkit README. It covers:
   - start and stop commands;
   - the minimal and detailed Claude Code env blocks for `settings.json` `env`, and what each one exposes (`OTEL_LOG_TOOL_DETAILS`, prompts);

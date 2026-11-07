@@ -7,7 +7,7 @@ Defines the logs devkit keeps about review loops, rounds and findings, what they
 ## ADDED Requirements
 
 ### Requirement: Review log records
-devkit SHALL append one JSON object per line to `${XDG_STATE_HOME:-~/.local/state}/devkit/review/<YYYY-MM-DD>.jsonl` for each of these events:
+devkit SHALL append one JSON object per line to `${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/<YYYY-MM-DD>.jsonl` for each of these events. The cache is used, not `XDG_STATE_HOME`, because it is writable inside cplt:
 - `devkit.review.loop_started`
 - `devkit.review.round_requested`
 - `devkit.review.round_recorded`
@@ -23,15 +23,14 @@ Each record SHALL follow the OpenTelemetry log data model:
 - `attributes` with `event.name`, `session.id`, `devkit.review.loop_id` and `devkit.review.round`, plus the event's own fields.
 
 A `devkit.review.finding` record SHALL also carry:
-- a stable `devkit.review.finding_id`;
+- a stable `devkit.review.finding_id`, derived from the loop, round, focus, path, line and claim;
 - `focus`, `model` and `outcome`;
 - `score`, when checked;
-- `drop_reason`, when dropped;
 - `code.file.path` and `code.line.number`.
 
-The repo SHALL be identified by its top-level directory name and by a hash of its path. The user's home path SHALL NOT appear in records.
+The repo SHALL be identified by its top-level directory name and by a hash of its path. The user's home path SHALL NOT appear in records, including in any text field: it is written as `~`.
 
-Writing a log record SHALL never fail the hook or the command that triggered it. A failed write SHALL produce a one-line warning on stderr.
+Writing a log record SHALL never fail the hook or the command that triggered it, except `verdict`, which SHALL exit non-zero when its record can't be written. A failed write SHALL produce a one-line warning on stderr.
 
 #### Scenario: A round produces finding records
 - **WHEN** `record` receives findings with outcomes `fixed`, `discuss` and `dropped`
@@ -42,7 +41,7 @@ Writing a log record SHALL never fail the hook or the command that triggered it.
 - **THEN** the stop is still blocked as usual, and stderr carries a devkit warning about the log
 
 ### Requirement: Content in logs is controlled
-By default, finding records SHALL NOT contain the code quote, the claim text or the failure scenario. A record SHALL carry those fields only when the user config sets `rules.review.log_content: true`. The repo layer SHALL NOT be able to enable `log_content`; a repo setting for it SHALL be ignored, and `devkit status` SHALL report it. Records SHALL never contain the content of files that match the `secrets` patterns.
+By default, finding records SHALL NOT contain the code quote, the claim text, the failure scenario or the reason a finding was dropped, since all are agent-written text. A record SHALL carry those fields (the last as `drop_reason`) only when the user config sets `rules.review.log_content: true`. The repo layer SHALL NOT be able to enable `log_content`; a repo setting for it SHALL be ignored, and `devkit status` SHALL report it. Records SHALL never contain the content of files that match the `secrets` patterns.
 
 The user config SHALL be able to turn logging off with `rules.review.log: false`. `rules.review.log_retention_days` SHALL default to 30. Log files older than that SHALL be deleted when a new record is written.
 
@@ -59,7 +58,7 @@ The user config SHALL be able to turn logging off with `rules.review.log: false`
 - **THEN** it is deleted the next time a record is written
 
 ### Requirement: User verdicts on findings
-`devkit review verdict <finding_id> accepted|rejected [--note TEXT]` SHALL append a `devkit.review.verdict` record that references the finding. It SHALL exit non-zero if no finding with that id was recorded within the retention period. `--note` text SHALL be stored only when `log_content` is true.
+`devkit review verdict <finding_id> accepted|rejected [--note TEXT]` SHALL append a `devkit.review.verdict` record that references the finding and carries the finding's repo, session, loop, round, focus, model and outcome. A verdict MAY be given on any recorded finding and given again; the latest one per finding counts. It SHALL exit non-zero if no finding with that id was recorded within the retention period. `--note` text SHALL be stored only when `log_content` is true.
 
 #### Scenario: Rejecting a finding
 - **WHEN** the user rejects a finding up for discussion and `devkit review verdict f-3a9c rejected` runs
@@ -79,7 +78,7 @@ devkit SHALL ship, under `devkit/telemetry/`:
 - a Grafana dashboard, set up automatically, with:
   - **activity:** reviews triggered, skipped and not completed per repo; rounds per loop;
   - **findings:** findings by focus and by model, and their outcomes;
-  - **quality:** for each focus and model, the share of findings the checker confirmed out of those it checked, and the share of discussed findings the user accepted;
+  - **quality:** for each focus and model, the share of findings the checker confirmed out of those it checked, and the share of discussed findings (`discuss` or `question`) the user accepted, counting the latest verdict per finding;
   - **cost:** cost and tokens for each reviewer agent and model, from Claude Code's metrics.
 - documentation of the Claude Code environment settings that send its telemetry to this collector, and of which of them expose prompts, tool parameters or file paths.
 

@@ -22,8 +22,13 @@ MAX_REVIEWED = 100
 SESSION_TTL = timedelta(days=7)
 
 
+def repo_hash(top: str | os.PathLike) -> str:
+    """The repo's id outside it: a hash of its real path (the state file's name, and the logs' repo hash)."""
+    return hashlib.sha256(os.fsencode(os.path.realpath(top))).hexdigest()[:16]
+
+
 def path_for(top: str | os.PathLike) -> Path:
-    return cache_dir() / f"{hashlib.sha256(os.fsencode(os.path.realpath(top))).hexdigest()[:16]}.json"
+    return cache_dir() / f"{repo_hash(top)}.json"
 
 
 def empty() -> dict[str, Any]:
@@ -46,7 +51,8 @@ def _loop(loop: Any) -> bool:
     if loop is None:
         return True
     rec = loop.get("record") if isinstance(loop, dict) else None
-    return (isinstance(loop, dict) and _counts(loop, ("round", "max")) and _tree(loop.get("from"))
+    return (isinstance(loop, dict) and _counts(loop, ("round", "max")) and isinstance(loop.get("id", ""), str)
+            and _tree(loop.get("from"))
             and _tree(loop.get("at")) and _counts(loop.get("totals"), ("fixed", "open"))
             and (rec is None or _counts(rec, ("fixed", "open", "dropped"))
                  or (isinstance(rec, dict) and isinstance(rec.get("skipped"), str))))

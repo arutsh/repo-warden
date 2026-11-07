@@ -72,7 +72,7 @@ The user wants every coding session that changes code to end with an independent
   - Where `review` is on, each turn start and each stop runs a few git commands. Unlike devkit-core's tool hooks this involves git, but it happens once per turn, not once per tool call.
 - **Files on the user's machine**:
   - review state in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/`;
-  - review logs in `${XDG_STATE_HOME:-~/.local/state}/devkit/review/`, kept for 30 days by default;
+  - review logs in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/`, kept for 30 days by default;
   - nothing is sent anywhere unless the user starts the telemetry stack or points a collector at the logs;
   - unreferenced git objects in the repo, removed by normal `git gc`;
   - skill and agent files in `~/.claude/skills/` and `~/.claude/agents/`, written only by `devkit install`.

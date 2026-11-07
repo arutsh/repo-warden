@@ -46,6 +46,7 @@ For Codex (Codex hooks docs, 2026-10-24):
 The `Stop` hook is a `type: "command"` hook, `devkit hook claude stop`. Its whole job is to decide whether to block, with "run review round N of M using the devkit-review skill" as the reason. The main session then starts the reviewers and makes the fixes.
 
 **Alternatives rejected:**
+- **An MCP server instead of the CLI and skill:** an MCP server only answers tool calls. It can't see a turn end or block a stop, so the hooks would still need the CLI. It also can't start subagents, because Claude Code doesn't support MCP sampling, so the process would still need the skill. It would run in every session, including repos that aren't opted in, and its tool calls don't carry the hook's `session_id`, so it would need `--session` resolution just as the CLI does. The only gain would be typed input for `record`, which a findings file covers (D8). A narrower read-only MCP server for reviewers is deferred (D8).
 - **A `type: "agent"` Stop hook:** it is experimental and Claude-only. Its subagent has read tools only, so it can't fix anything, and it can't start parallel reviewers.
 - **A `type: "prompt"` hook:** it is a single LLM call that can't see the code.
 - **Running `claude -p` from the hook:** a nested session that doesn't share the main context. It has its own cost, timeouts and sandbox problems, and it is Claude-only.
@@ -150,9 +151,9 @@ Each subcommand finds the repo from the cwd and the session from the state's sin
   ```
   Round 1 lists every configured focus; later rounds list `followup_reviewers`.
 - **`diff`** prints `git diff --stat` followed by the full diff for the round's `from..at`, using the D4 excludes and hardening.
-- **`record`** reads a JSON array of findings on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10).
+- **`record`** reads a JSON array of findings on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10). It prints the counts and, when the records were logged, the `finding_id` of each open finding, which the skill shows in its To discuss list (D8).
 - **`skip`** writes a skipped record for the round.
-- **`verdict`** appends a verdict log record.
+- **`verdict`** appends a verdict log record. It is the one command that exits non-zero when its log write fails, since the record is all it does.
 - **`reset`** deletes the state file.
 
 The skill never reads the YAML config; everything it needs comes from `plan`.
@@ -181,8 +182,9 @@ The skill passes the model from `plan` through the Agent tool's `model` paramete
 **Reviewer prompt contract.** The prompt the skill writes for each reviewer contains:
 1. the change intent, in 1–3 sentences on *what* the change does, never *why it is correct*;
 2. the scope command;
-3. the list of things that don't count as findings;
-4. the output format: one JSON object per finding with `file`, `line`, `quote`, `claim`, `failure_scenario` and `focus`.
+3. the paths of the rule files to read (`AGENTS.md`, `CLAUDE.md`, the active openspec change). Subagents already load `CLAUDE.md` and `AGENTS.md`, so pasting them would double the tokens and risk the main session paraphrasing them;
+4. the list of things that don't count as findings;
+5. the output format: one JSON object per finding with `file`, `line`, `quote`, `claim`, `failure_scenario` and `focus`.
 
 **Not findings** (adapted from Anthropic's code-review plugin):
 - issues that already existed before the change;
@@ -214,10 +216,12 @@ The plugin uses a single threshold of 80. Splitting it here keeps uncertain find
 - fixes the obvious findings (spec definition);
 - re-runs the relevant tests;
 - lists the rest, each with its evidence and any objection it has;
-- pipes every finding, with its outcome, into `devkit review record`;
+- writes every finding, with its outcome, to a JSON file in its scratch directory and runs `devkit review record < <file>`. Findings quote code, and inlining that in a heredoc or `echo` breaks on quotes and `$`;
 - shows each finding's id in the To discuss list, so a later `verdict` can refer to it.
 
 Its final message has three parts: **Fixed**, **To discuss**, **Dropped: N** (with reasons grouped). The skill also works on demand (`/devkit-review`). With no active loop, it starts one through `devkit review plan --start`, so manual and hook-started runs share the same state.
+
+**Deferred: read-only MCP tools for reviewers.** Reviewers have Bash only for `devkit review diff`, `git log` and `git blame`. A small devkit MCP server could expose those three as read-only tools, so the agent definitions could drop Bash. That would close the "reviewers could change files" risk instead of relying on the prompt. It is built only if Bash misuse shows up in practice, because it adds a server process to every session.
 
 ### D9. Installing the skill and agents
 `install --agent claude` copies the files into `$CLAUDE_CONFIG_DIR` or `~/.claude`, under `skills/` and `agents/`.
@@ -239,12 +243,16 @@ Claude Code already exports OTel (checked 2026-10-24 against its monitoring docs
 
 So devkit does **not** measure cost, tokens or durations. It records only what Claude can't know: loops, rounds, findings, scores, outcomes and verdicts.
 
-**Format.** Records follow the OTel log data model as JSON lines: `timestamp` (RFC 3339 with nanoseconds), `severity_text`, `body`, `attributes`, `resource`. They are appended to a daily file under `${XDG_STATE_HOME:-~/.local/state}/devkit/review/`.
+**Format.** Records follow the OTel log data model as JSON lines: `timestamp` (RFC 3339 with nanoseconds), `severity_text`, `body`, `attributes`, `resource`. They are appended to a daily file under `${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/`, next to the state file. `XDG_STATE_HOME` would be the natural place, but `~/.local/state` is read-only inside cplt (checked 2026-11-07) and `~/.cache` is writable. The cost is that a cache cleaner can delete the history.
 
 Each record is written as one line, in a single `write()` call, to a file opened with `O_APPEND`, while holding an `fcntl` lock. The lock keeps records from concurrent sessions from interleaving.
 
 **Ids:**
-- `finding_id` is `f-` followed by the first 8 hex characters of sha256 over loop_id, round, file, line and claim. It is stable, and short enough to type in `verdict`.
+- `loop_id` is `l-` followed by 12 hex characters of sha256 over the session, the loop's start trees and its start time. It is stored in the loop state and is the same in every round.
+- `finding_id` is `f-` followed by the first 8 hex characters of sha256 over loop_id, round, focus, file (as logged), line and claim. It is stable, and short enough to type in `verdict`. The focus keeps two reviewers' identical claims apart when the main session doesn't merge them.
+- `loop_started` carries `trigger`: `stop` for a hook-started loop, `on_demand` for `plan --start`.
+
+**What the records may hold.** Agent-written text (quote, claim, failure scenario, drop reason, skip reason, verdict note) is logged only with the user's `log_content`, and never for a finding on a `secrets` path. Every text field has the home directory replaced by `~`, and an absolute path inside the repo is made repo-relative. The state machine stays pure: it returns its log events with its decision, and the caller writes them after releasing the state lock.
 - `session.id` is the hook's `session_id`. If it matches Claude's own OTel `session.id`, which a task verifies, the dashboard can join devkit records to Claude's cost data.
 
 **Alternatives rejected:**
@@ -282,7 +290,7 @@ There is no other exporter.
   - loops, rounds per loop, and how loops ended;
   - findings by focus, by model and by outcome;
   - checker confirmation rate per focus and model: (confirmed + questions) out of all checked;
-  - user acceptance rate: accepted verdicts out of all verdicts.
+  - user acceptance rate: accepted out of all verdicts on `discuss` and `question` findings, counting the latest verdict per `finding_id`. The verdict record carries the finding's outcome, focus and model, so no join is needed.
 - **From Claude's metrics:** `claude_code_cost_usage` and `claude_code_token_usage`, filtered to `agent_name=~"devkit-review-.*"` and grouped by `agent_name` and `model`.
 
 **Privacy trade-off.** Claude Code reports custom agent names as `"custom"` unless `OTEL_LOG_TOOL_DETAILS=1` is set. That same setting also exports Bash commands and file paths. The README shows both env blocks:
@@ -338,4 +346,5 @@ Codex subagents are defined in TOML, and I've only seen them described by third 
 ## Open Questions
 
 - The checker thresholds (75 and 50) and the default model for each focus may need tuning after real use. They are config or skill-text changes, not spec changes.
+- Checker cost: one checker per finding, on `opus`, from up to five reviewers. If that proves too costly, one checker per reviewer's batch of findings would cut the calls while keeping the checker independent of the reviewer. This is a skill-text change.
 - Whether the `history` focus is worth its cost in small repos. It can be removed from `reviewers` per repo.
