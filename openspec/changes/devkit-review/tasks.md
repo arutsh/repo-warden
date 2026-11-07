@@ -84,8 +84,8 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 6. Review skill, reviewer agents and their install
 
-- [ ] 6.1 Write `claude_assets/agents/devkit-review-{correctness,rules,tests,security,history,checker}.md`. Each has a single-focus prompt, `tools: Read, Grep, Glob, Bash`, no edit tools, a default model, the managed marker, and the finding JSON output contract (D8). The checker carries the 0–100 rubric and the thresholds. Verify with a test that parses each file's frontmatter and asserts the tools, model and marker.
-- [ ] 6.2 Write `claude_assets/skills/devkit-review/SKILL.md`, following the spec's eight-step process:
+- [x] 6.1 Write `claude_assets/agents/devkit-review-{correctness,rules,tests,security,history,checker}.md`. Each has a single-focus prompt, `tools: Read, Grep, Glob, Bash`, no edit tools, a default model, the managed marker, and the finding JSON output contract (D8). The checker carries the 0–100 rubric and the thresholds. Verify with a test that parses each file's frontmatter and asserts the tools, model and marker.
+- [x] 6.2 Write `claude_assets/skills/devkit-review/SKILL.md`, following the spec's eight-step process:
   - `plan` and `diff`;
   - parallel reviewers that are never forks, passing `model` from `plan`;
   - the prompt contract with no main-session reasoning, and rule files passed as paths, never pasted;
@@ -97,8 +97,8 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - on-demand use through `plan --start`.
 
   Verify by reviewing it against each spec scenario under "The review skill's process", and with a test that every `devkit review` command the skill mentions exists in the CLI parser.
-- [ ] 6.3 Extend `install|uninstall --agent claude` to copy the skill and agents into `$CLAUDE_CONFIG_DIR` or `~/.claude`, with the marker files, atomic writes, no rewrite when unchanged, and refusal on an unmanaged file of the same name (D9). Make sure the assets ship as package data. Verify with tests for "Idempotent skill install" and "Foreign skill kept", uninstall removing only managed files, and `uv build` including the assets.
-- [ ] 6.4 Document the skill, the reviewer focuses, the models and how to change them, cost expectations, and on-demand `/devkit-review` in the devkit README. Verify by following the README's install steps on this machine: `/devkit-review` appears in a new Claude Code session.
+- [x] 6.3 Extend `install|uninstall --agent claude` to copy the skill and agents into `$CLAUDE_CONFIG_DIR` or `~/.claude`, with the marker files, atomic writes, no rewrite when unchanged, and refusal on an unmanaged file of the same name (D9). Make sure the assets ship as package data. Verify with tests for "Idempotent skill install" and "Foreign skill kept", uninstall removing only managed files, and `uv build` including the assets.
+- [x] 6.4 Document the skill, the reviewer focuses, the models and how to change them, cost expectations, and on-demand `/devkit-review` in the devkit README. Verify by following the README's install steps on this machine: `/devkit-review` appears in a new Claude Code session.
 
 ## 7. Telemetry stack and dashboard
 

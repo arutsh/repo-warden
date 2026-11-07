@@ -65,6 +65,11 @@ def cmd_install(args: argparse.Namespace, *, remove: bool) -> int:
     for step in steps:
         try:
             print(step())
+        except install.PartialInstall as e:
+            print(e.done)
+            for problem in e.problems:
+                print(f"devkit: {problem}", file=sys.stderr)
+            status = 1
         except install.InstallError as e:
             print(f"devkit: {e}", file=sys.stderr)
             status = 1
@@ -147,7 +152,7 @@ def print_review_state(top) -> None:
     print(f"  last review completed: {done[0] if done else 'never'}" + (f"  (session {done[1]})" if done else ""))
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="devkit", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -194,8 +199,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--agents-md", action="store_true", help="also AGENTS.md, and CLAUDE.md importing it")
     p.add_argument("--openspec", action="store_true", help="also generic rules in openspec/config.yaml")
     p.add_argument("--ci", action="store_true", help="also a GitHub Actions workflow running `devkit check --range`")
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     if args.cmd == "hook":
         return run_hook(args.agent, args.event, sys.stdin, sys.stdout, sys.stderr)
     if args.cmd in ("install", "uninstall"):

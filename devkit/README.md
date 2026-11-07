@@ -38,7 +38,7 @@ The layers that enforce are:
 
 ```sh
 uv tool install ./devkit                 # from a repo-warden checkout; adds `devkit` to ~/.local/bin
-devkit install --agent claude            # registers the hooks in ~/.claude/settings.json
+devkit install --agent claude            # the hooks in ~/.claude/settings.json, plus the review skill and agents
 devkit install --agent codex             # registers the hooks in ~/.codex/hooks.json
 devkit status                            # what applies here and why
 ```
@@ -51,8 +51,12 @@ original file as `<file>.devkit-backup` (for example `settings.json.devkit-backu
 that isn't valid JSON. Running it again changes nothing. Claude Code reads hooks at start-up, so
 restart open sessions (or check them with `/hooks`).
 
-If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json`. If `CODEX_HOME`
-is set, it uses `$CODEX_HOME/hooks.json`.
+For Claude Code, install also adds the [`devkit-review` skill and its reviewer
+agents](#the-review-skill-and-reviewer-agents) to `~/.claude/skills/` and `~/.claude/agents/`, and
+uninstall removes them.
+
+If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json` (and its `skills/` and
+`agents/`). If `CODEX_HOME` is set, it uses `$CODEX_HOME/hooks.json`.
 
 **Codex only runs hooks you have trusted.** After `devkit install --agent codex`, open Codex and run
 `/hooks` to review and trust the devkit entries. Until you do, Codex skips them. Trust is tied to
@@ -329,6 +333,66 @@ one-line warning, and no review runs.
 devkit builds the tree objects itself and writes them with `git hash-object`, which the guard
 allows. The id is the same one `write-tree` would give. `~/.cache` is writable inside cplt, objects
 can be written to `.git/objects`, and no ref changes.
+
+## The review skill and reviewer agents
+
+The `review` rule only decides when a round is due; the `devkit-review` skill runs it.
+`devkit install --agent claude` installs, into `~/.claude/` (or `$CLAUDE_CONFIG_DIR`):
+
+- `skills/devkit-review/SKILL.md`, with a `.devkit-managed` file beside it;
+- `agents/devkit-review-{correctness,rules,tests,security,history,checker}.md`, each with a
+  `<!-- devkit-managed -->` line after its frontmatter.
+
+Installing again refreshes these files when devkit ships a newer version and leaves unchanged ones
+alone; a local edit to a managed file is replaced. A file of the same name without the marker, or a
+`skills/devkit-review/` directory holding other files and no marker, is never overwritten: install
+names it, installs the rest, and exits 1. Uninstall removes only the marked files, and the skill
+directory once it is empty. Restart Claude Code sessions after installing.
+
+**A round.** The skill runs `devkit review plan` and `diff`, then starts one reviewer subagent per
+focus, in parallel. Each starts with a fresh context, never a fork of your session, and its prompt
+holds only the change's intent, the `devkit review diff` command, the paths of the rule files to
+read, and a list of things that don't count as findings. Reviewers can read files and run read-only
+git and `devkit review` commands; they have no edit tools. A finding needs a file, line, quoted
+code, claim and failure scenario, or it is dropped as `no evidence`. A checker subagent then
+re-checks each finding by itself (at most 10 at a time) and scores it 0, 25, 50, 75 or 100: 75 or
+more is confirmed, 50 is put to you as a question, and below 50 it is dropped. The main session
+fixes only the obvious confirmed findings (local, one evident correct form, no other behaviour
+change, covered by a test), re-runs the tests, and never commits or stages. It records the round
+with `devkit review record` and ends with **Fixed**, **To discuss** (each with its finding id) and
+**Dropped: N**. When you accept or reject a finding up for discussion, it runs
+`devkit review verdict`.
+
+| Focus | Default model | Looks for |
+|---|---|---|
+| `correctness` | `opus` | bugs in the changed lines and the code they call or that calls them |
+| `rules` | `sonnet` | breaks of `AGENTS.md`, `CLAUDE.md`, `.devkit.yaml`, and the specs and tasks of the openspec change in progress |
+| `tests` | `sonnet` | changed behaviour with no test, and tests that can't fail |
+| `security` | `sonnet` | injection, path handling, secrets, trust boundaries |
+| `history` | `sonnet` | regressions against past fixes, from `git log` and `git blame` |
+| checker | `opus` | not a focus: re-checks one finding against the code |
+
+**Changing the models.** Set `reviewers`, `followup_reviewers` and `checker` in the `review` rule
+([config above](#review-style-default-off)). The skill passes each model to the subagent call, so a
+change applies from the next round, with no reinstall. Leave a focus out of `reviewers` to stop
+running it. `inherit` runs the subagent on your session's model. The `model` in each agent file is
+used only when the agent is started some other way.
+
+**Cost.** Each round runs several subagents. With the defaults, round 1 runs five reviewers (one on
+`opus`, four on `sonnet`) and one `opus` checker per finding left after duplicates and findings
+without evidence are dropped. Rounds 2 and 3 run only `followup_reviewers` (`correctness` on `opus`)
+over the previous round's fixes, plus their checkers. A loop runs at most `max_rounds` rounds, and
+only on turns that changed files. To spend less: drop focuses from `reviewers` (`history` adds the
+least in small repos), move them to `sonnet` or `haiku`, set `max_rounds: 1`, add `skip_paths`, or
+use `review: warn` and run the skill only when you want a review. Claude Code's own telemetry
+reports the cost per model and subagent.
+
+**On demand.** Type `/devkit-review` (or ask for a devkit review) in a Claude Code session in the
+repo. The skill runs `devkit review plan --start`, which starts a loop over the changes since the
+last review, the same loop the stop hook would start. With nothing new to review it says so and
+stops. On-demand reviews need `review` at `warn` or `block` in the repo, since the stop hook ends the
+loop: at `block` it then requests the follow-up rounds as usual; at `warn` it only tells you a
+follow-up round is due, and the loop ends at the stop after that.
 
 ## Review logs
 
