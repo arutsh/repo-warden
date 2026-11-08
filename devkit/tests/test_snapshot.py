@@ -26,7 +26,7 @@ def tree_files(repo, tree) -> list[str]:
 
 
 @pytest.mark.parametrize("object_format", ["sha1", "sha256"])
-def test_id_equals_write_tree(tmp_path, object_format):
+def test_tree_entries_and_modes(tmp_path, object_format):
     repo = tmp_path / object_format
     subprocess.run(["git", "init", "-q", f"--object-format={object_format}", str(repo)], check=True)
     for name in ("a.py", "a-b", "a.b", "a/x.py", "a/deep/er/y.py", "ab/z", "B", "space name.txt"):
@@ -42,13 +42,14 @@ def test_id_equals_write_tree(tmp_path, object_format):
     git(sub, "commit", "-qm", "sub")
     git(repo, "add", "a.py")  # a real index for the snapshot to copy
 
-    expected = subprocess.run(
-        f"cp .git/index {tmp_path}/idx && GIT_INDEX_FILE={tmp_path}/idx git add -A 2>/dev/null"
-        f" && GIT_INDEX_FILE={tmp_path}/idx git write-tree", shell=True, cwd=repo, check=True,
-        capture_output=True, text=True).stdout.strip()
     tree = snapshot(repo, ())
-    assert tree == expected
-    assert "160000 commit" in git(repo, "ls-tree", tree, "sub") and "120000" in git(repo, "ls-tree", tree, "link")
+    entries = [line.split(None, 3) for line in git(repo, "ls-tree", "-r", "-z", tree).split("\0") if line]
+    assert [(mode, kind, path) for mode, kind, _, path in entries] == [
+        ("100644", "blob", "B"), ("100644", "blob", "a-b"), ("100644", "blob", "a.b"),
+        ("100644", "blob", "a.py"), ("100644", "blob", "a/deep/er/y.py"), ("100644", "blob", "a/x.py"),
+        ("100644", "blob", "ab/z"), ("120000", "blob", "link"), ("100755", "blob", "run.sh"),
+        ("100644", "blob", "space name.txt"), ("160000", "commit", "sub")]
+    assert len(tree) == (64 if object_format == "sha256" else 40)
 
 
 def test_same_tree_same_id(committed):

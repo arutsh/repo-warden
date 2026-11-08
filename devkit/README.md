@@ -331,10 +331,10 @@ never sees them. A nested git repo with no commit yet (right after `git init x` 
 makes git refuse to snapshot. Until it is committed, removed or ignored, every stop goes ahead with a
 one-line warning, and no review runs.
 
-**Inside cplt** (checked 2026-10-31): snapshots work. cplt's git guard refuses `git write-tree`, so
-devkit builds the tree objects itself and writes them with `git hash-object`, which the guard
-allows. The id is the same one `write-tree` would give. `~/.cache` is writable inside cplt, objects
-can be written to `.git/objects`, and no ref changes.
+**Inside cplt** (checked 2026-11-08): snapshots need cplt `2026.11.06-074203-2265661` or later.
+Snapshots use `git write-tree`, and older cplt releases' git guard refuses it, so the snapshot
+fails. `~/.cache` is writable inside cplt, objects can be written to `.git/objects`, and no ref
+changes.
 
 ## The review skill and reviewer agents
 

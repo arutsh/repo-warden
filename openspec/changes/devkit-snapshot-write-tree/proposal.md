@@ -1,6 +1,6 @@
 # Proposal
 
-Status: parked draft, written 2026-10-31. It has no tasks yet. Pick it up when cplt can run `git write-tree`, or when someone decides the workaround should go.
+Status: active since 2026-11-08. Written 2026-10-31 as a parked draft. cplt `2026.11.06-074203-2265661` allows `git write-tree`, so step 2 of "What Changes" applies; see `tasks.md`.
 
 ## Why
 

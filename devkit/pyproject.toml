@@ -1,6 +1,6 @@
 [project]
 name = "repo-warden-devkit"
-version = "0.2.0"
+version = "0.2.1"
 description = "Opt-in, agent-neutral dev-workflow rules for coding agents, git hooks and CI."
 readme = "README.md"
 license = "MIT"
