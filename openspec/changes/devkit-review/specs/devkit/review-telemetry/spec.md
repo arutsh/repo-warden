@@ -86,7 +86,7 @@ Starting the stack SHALL be a manual, documented command. Nothing in devkit SHAL
 
 #### Scenario: Stack starts and shows review data
 - **WHEN** the user runs the documented compose command and a review round has been recorded
-- **THEN** the dashboard at `http://127.0.0.1:3000` shows the round and its findings
+- **THEN** the dashboard at `http://127.0.0.1:3300` shows the round and its findings
 
 #### Scenario: Not exposed on the network
 - **WHEN** the stack is running

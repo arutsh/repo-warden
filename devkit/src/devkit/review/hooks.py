@@ -19,7 +19,8 @@ def secret_patterns(cfg) -> list[str]:
 
 def handle(event: Event, settings: Mapping[str, Any], *, now: datetime | None = None) -> list[Finding]:
     sid = event.session_id
-    if not sid or (event.phase == "stop" and machine.never_blocks(event.meta)):
+    if not sid or (event.phase == "stop" and machine.never_blocks(event.meta)) or (
+            event.phase == "prompt" and machine.not_a_turn(event.meta)):
         return []
     top = engine.event_top(event)
     if top is None:

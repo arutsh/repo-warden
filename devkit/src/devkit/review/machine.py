@@ -57,6 +57,11 @@ def never_blocks(meta: Mapping[str, Any]) -> bool:
     return meta.get("permission_mode") == "plan" or bool(meta.get("background_task_count"))
 
 
+def not_a_turn(meta: Mapping[str, Any]) -> bool:
+    """Prompts that don't start a turn: a background task's notification, mid-round when reviewers run."""
+    return bool(meta.get("task_notification"))
+
+
 def _fresh(tree: str, now: datetime) -> dict[str, Any]:
     return {"baseline": tree, "turn_start": tree, "last_reviewed": None, "loop": None, "warned": None,
             "updated": now.isoformat()}

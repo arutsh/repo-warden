@@ -267,7 +267,9 @@ stop go ahead with a one-line warning.
 review; each later round covers only the previous round's fixes. The loop ends when a round is
 recorded with no fixes or `max_rounds` is reached. If the agent stops without recording a requested
 round, the loop ends and the user is told the round was not completed. Either way the user sees a
-one-line summary, and the last snapshot counts as reviewed.
+one-line summary, and the last snapshot counts as reviewed. A prompt from the user in the middle of
+a round ends the loop the same way, and its changes are reviewed with the next ones. A background
+task's `<task-notification>`, which Claude Code also delivers as a prompt, doesn't count as one.
 
 ```yaml
 # ~/.config/devkit/config.yaml, or <repo>/.devkit.yaml
@@ -480,6 +482,10 @@ how often discussed findings from each focus and model turn out to be right. An 
 recorded within the retention period exits non-zero and writes nothing, and so does `verdict` with
 `log: false`. `--note` is kept only with `log_content`. A verdict can be given on any recorded
 finding, a fixed one included, and given again: the dashboard counts the latest one per finding.
+
+**Dashboard.** [`telemetry/`](telemetry/README.md) has an optional local Grafana stack (Docker
+Compose, loopback only) that reads these logs and Claude Code's own telemetry. Its dashboard shows
+loops, findings, checker and user agreement, and the cost of each reviewer. Nothing starts it but you.
 
 ## Claude Code mapping
 

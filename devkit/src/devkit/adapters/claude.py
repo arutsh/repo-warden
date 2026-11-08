@@ -66,6 +66,9 @@ def turn_event(payload: dict[str, Any], phase: Phase) -> Event:
     meta = {"permission_mode": payload.get("permission_mode"), "source": payload.get("source"),
             "background_task_count": len(tasks) if isinstance(tasks, list) else 0,
             "stop_hook_active": bool(payload.get("stop_hook_active"))}
+    if phase == "prompt":  # a finished background task is delivered as a prompt; the turn goes on
+        text = payload.get("prompt")
+        meta["task_notification"] = isinstance(text, str) and text.lstrip().startswith("<task-notification>")
     sid = payload.get("session_id")
     return Event("turn", phase, cwd=payload.get("cwd") or None, session_id=sid if isinstance(sid, str) else None,
                  meta=meta)

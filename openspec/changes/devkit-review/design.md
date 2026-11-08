@@ -141,6 +141,8 @@ Each request blocks once, and a missing record ends the loop. So a turn can be b
 
 The `turn_start` check is what keeps question-only turns free. A turn that was interrupted never reaches Stop, so its changes are not reviewed then. They are picked up by the next turn that changes something, because round 1 covers everything since `last_reviewed`.
 
+`UserPromptSubmit` sets `turn_start = cur`. If a loop is still open, the user has interrupted it: the loop ends as `not_completed` and is reviewed with the next changes. Claude Code also delivers a finished background task's `<task-notification>` as a `UserPromptSubmit`, whose `prompt` starts with that tag; no other payload field tells it apart (recorded with Claude Code 2.1.319). Such a prompt continues the current turn, so the hook ignores it before taking a snapshot. Without this, a reviewer run in the background ended its own round. The skill also runs reviewers and checkers in the foreground, so a round doesn't depend on this check.
+
 ### D7. The `devkit review` command
 Each subcommand finds the repo from the cwd and the session from the state's single active loop for that repo. If more than one session has an active loop, `--session` is required, and the hook's reason text always includes it.
 
@@ -276,8 +278,8 @@ The compose file runs the `grafana/otel-lgtm` image, pinned to a tag at least tw
 - the dashboard, provisioned.
 
 Ports are published on `127.0.0.1` only:
-- 3000 for Grafana;
-- 4317 and 4318 for OTLP.
+- 3300 for Grafana (3000 is a common dev-server port);
+- 4327 and 4328 for OTLP, so they don't clash with a collector already on the standard 4317 and 4318.
 
 **Collector pipelines:**
 - `filelog` (devkit JSONL) → Loki;
@@ -348,3 +350,4 @@ Codex subagents are defined in TOML, and I've only seen them described by third 
 - The checker thresholds (75 and 50) and the default model for each focus may need tuning after real use. They are config or skill-text changes, not spec changes.
 - Checker cost: one checker per finding, on `opus`, from up to five reviewers. If that proves too costly, one checker per reviewer's batch of findings would cut the calls while keeping the checker independent of the reviewer. This is a skill-text change.
 - Whether the `history` focus is worth its cost in small repos. It can be removed from `reviewers` per repo.
+- Whether devkit's own reviewers are worth keeping next to Claude Code's built-in `/code-review`. The parts only devkit provides are the trigger, the rounds, the record and the logs. Claude's built-in review can't replace those, but it could replace some of the reviewers. One option is a pluggable reviewer step: the stop hook's block reason tells the agent to run `/code-review` without `--fix`, and the skill turns its findings into the `record` JSON, the same kind of translation D12(b) plans for Codex. Run both on real changes and compare them on the dashboard's confirmation rate, acceptance rate and cost. If the built-in does as well on correctness, drop the correctness, tests and security reviewers and keep `rules` and `history`, which are specific to this repo. Investigate only if the dashboard suggests it, or if keeping the reviewer prompts up becomes a burden. Not part of this change.

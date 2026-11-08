@@ -1,0 +1,64 @@
+# Replaces the image's collector config (design D11): devkit review logs and Claude Code's OTLP in,
+# local Prometheus and Loki out, no other exporter.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317  # inside the container; compose publishes it on 127.0.0.1 only
+      http:
+        endpoint: 0.0.0.0:4318
+  filelog/devkit:
+    include: [/devkit-logs/*.jsonl]
+    start_at: beginning
+    include_file_name: false
+    storage: file_storage  # remembers how far each file was read, so a restart doesn't re-send it
+    operators:
+      - type: json_parser
+        parse_to: body
+        timestamp:
+          parse_from: body.timestamp
+          layout_type: gotime
+          layout: "2006-01-02T15:04:05.999999999Z07:00"
+        severity:
+          parse_from: body.severity_text
+
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13133  # polled by the image's start script
+    path: /ready
+  file_storage:
+    directory: /data/otelcol
+    create_directory: true
+
+processors:
+  batch:
+  transform/devkit:
+    log_statements:
+      # A line is a whole OTel log record: lift its resource, attributes and body into place.
+      - context: log
+        statements:
+          - merge_maps(resource.attributes, log.body["resource"], "upsert")
+          - merge_maps(log.attributes, log.body["attributes"], "upsert")
+          - set(log.body, log.body["body"])
+
+exporters:
+  otlp_http/metrics:
+    endpoint: http://127.0.0.1:9090/api/v1/otlp
+  otlp_http/logs:
+    endpoint: http://127.0.0.1:3100/otlp
+
+service:
+  extensions: [health_check, file_storage]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/logs]
+    logs/devkit:
+      receivers: [filelog/devkit]
+      processors: [transform/devkit, batch]
+      exporters: [otlp_http/logs]

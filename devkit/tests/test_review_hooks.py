@@ -107,6 +107,33 @@ def test_round_not_completed_is_a_notice(opted_in):
     assert resp == {"systemMessage": "[devkit review] review round 1 of 3 was not completed"}
 
 
+# Recorded: Claude Code delivers a finished background agent's notification as a UserPromptSubmit.
+def notification(cwd):
+    return {**prompt(cwd, "<task-notification>\n<task-id>ae0a994e45bc3b819</task-id>\n<status>completed</status>\n"
+                          "</task-notification>"), "prompt_id": "80cdefa9-04c1-4d53-ba41-702b1f3c6209"}
+
+
+def test_task_notification_does_not_end_the_round(opted_in):
+    start_turn(opted_in)
+    (opted_in / "src" / "app.py").write_text("a = 2\n")
+    assert stop(opted_in)[0]["decision"] == "block"
+    assert hook("user-prompt-submit", notification(opted_in)) == (None, "")  # a reviewer finished
+    assert loop(opted_in)["round"] == 1
+    set_record(opted_in, fixed=0, open=0, dropped=0)
+    assert stop(opted_in, active=True) == ({"systemMessage": "[devkit review] review: 1 round, 0 fixed, 0 to discuss"},
+                                           "")
+
+
+def test_user_prompt_mid_round_ends_it_unreviewed(opted_in):
+    start_turn(opted_in)
+    (opted_in / "src" / "app.py").write_text("a = 2\n")
+    stop(opted_in)
+    resp, _ = hook("user-prompt-submit", prompt(opted_in, "stop, do something else"))
+    assert resp == {"systemMessage": "[devkit review] review round 1 of 3 was interrupted; "
+                                     "its changes will be reviewed with the next ones"}
+    assert loop(opted_in) is None
+
+
 def test_pre_existing_changes_are_not_the_trigger(opted_in):
     (opted_in / "src" / "app.py").write_text("dirty = 1\n")
     start_turn(opted_in)

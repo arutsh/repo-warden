@@ -39,6 +39,7 @@ Run the `scope` command yourself and read the diff, then gather what the reviewe
 Start one subagent per focus in `reviewers`, all in the same message so they run in parallel:
 - `subagent_type`: `devkit-review-<focus>`, for example `devkit-review-correctness`;
 - `model`: that focus's model from `plan`. For `inherit`, leave `model` out;
+- in the foreground: never set `run_in_background`, and wait in this turn for every result;
 - never a fork of this conversation: each reviewer starts fresh.
 
 If those agent types don't exist, tell the user to run `devkit install --agent claude` and restart,
@@ -77,9 +78,9 @@ Each reviewer replies with a JSON array of findings: `focus`, `file`, `line`, `q
 ## 4. Check every remaining finding
 
 For each remaining finding, start a `devkit-review-checker` subagent with `model` set to `checker`
-from `plan`. Start at most 10 at a time, in one message, and the next batch once those finish. Its
-prompt is the finding's JSON and the scope command, nothing else: not the reviewer's reasoning, not
-your view of it.
+from `plan`, in the foreground as in step 2. Start at most 10 at a time, in one message, and the next
+batch once those finish. Its prompt is the finding's JSON and the scope command, nothing else: not
+the reviewer's reasoning, not your view of it.
 
 The checker replies with `{"score": ..., "reason": ...}`. Keep the score on the finding:
 - **75 or more:** confirmed. Go on to step 5.
