@@ -61,6 +61,15 @@ def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None
     return [Event("edit", phase, path=path, before=before, after=after, cwd=cwd)]
 
 
+_HANDBACK = "Another Claude session sent a message:\n<agent-message "
+
+
+def _task_delivery(text: str) -> bool:
+    """A background task's `<task-notification>`, or a subagent's report handed back as an agent message
+    (sent before its notification)."""
+    return text.startswith("<task-notification>") or text.startswith(_HANDBACK)
+
+
 def turn_event(payload: dict[str, Any], phase: Phase) -> Event:
     tasks = payload.get("background_tasks")
     meta = {"permission_mode": payload.get("permission_mode"), "source": payload.get("source"),
@@ -68,7 +77,7 @@ def turn_event(payload: dict[str, Any], phase: Phase) -> Event:
             "stop_hook_active": bool(payload.get("stop_hook_active"))}
     if phase == "prompt":  # a finished background task is delivered as a prompt; the turn goes on
         text = payload.get("prompt")
-        meta["task_notification"] = isinstance(text, str) and text.lstrip().startswith("<task-notification>")
+        meta["task_notification"] = isinstance(text, str) and _task_delivery(text.lstrip())
     sid = payload.get("session_id")
     return Event("turn", phase, cwd=payload.get("cwd") or None, session_id=sid if isinstance(sid, str) else None,
                  meta=meta)
