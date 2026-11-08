@@ -74,5 +74,5 @@ def evaluate(events: Iterable[Event], *, strict: bool = False, user_path: Path |
                           if f"devkit: ignored invalid config {e}" not in out.notes]
         for rule, rc in _active(configs[top], event):
             level = min(rc.level, rule.max_level)
-            out.findings += [(level, f) for f in rule.check(event, rc.settings)]
+            out.findings += [(min(level, f.max_level), f) for f in rule.check(event, rc.settings)]
     return out

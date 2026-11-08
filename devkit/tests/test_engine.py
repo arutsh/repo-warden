@@ -1,3 +1,5 @@
+import pytest
+
 from devkit.engine import evaluate
 from devkit.events import Event, Finding, Level
 
@@ -66,6 +68,28 @@ def test_file_event_uses_the_files_repo(stub_rules, tmp_path, repo):
     (repo / ".devkit.yaml").write_text("")
     ev = Event("edit", path=str(repo / "a.py"), before="", after="", cwd=str(tmp_path))
     assert any(f.rule == "style" for _, f in evaluate([ev]).findings)
+
+
+@pytest.mark.parametrize("phase", ["session-start", "prompt", "stop"])
+def test_tool_rules_never_see_turn_events(stub_rules, repo, user_config, phase):
+    user_config("repos: all\n")
+    pre = stub_rules("pre_only", findings=[Finding("pre_only", "x")], phases={"pre"})
+    every_phase = stub_rules("tool_kinds", findings=[Finding("tool_kinds", "x")],
+                             phases={"pre", "post", "check", "session-start", "prompt", "stop"})
+    turn = stub_rules("turn", findings=[Finding("turn", "t")], kinds={"turn"}, phases={phase})
+    out = evaluate([Event("turn", phase, cwd=str(repo), session_id="s1")])
+    assert [f.rule for _, f in out.findings] == ["turn"]
+    assert type(pre).calls == type(every_phase).calls == 0 and type(turn).calls == 1
+
+
+def test_event_meta_is_read_only():
+    meta = {"permission_mode": "default"}
+    ev = Event("turn", "stop", session_id="s1", meta=meta)
+    meta["permission_mode"] = "plan"
+    assert ev.meta["permission_mode"] == "default"
+    with pytest.raises(TypeError):
+        ev.meta["permission_mode"] = "plan"
+    assert hash(ev) == hash(Event("turn", "stop", session_id="s1"))
 
 
 def test_bracketed_path_uses_the_files_repo(stub_rules, tmp_path, repo):

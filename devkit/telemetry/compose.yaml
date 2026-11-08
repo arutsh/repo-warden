@@ -1,0 +1,37 @@
+# Local telemetry for devkit reviews (design D11). Start it by hand: `docker compose up -d` in this
+# directory. Every port is published on 127.0.0.1 only, and nothing is exported off the machine.
+name: devkit-telemetry
+
+services:
+  lgtm:
+    # Collector, Prometheus, Loki, Tempo and Grafana in one container. Pinned: 0.38.0 was pushed
+    # 2026-10-23; bump only to a tag at least two weeks old.
+    image: grafana/otel-lgtm:0.38.0@sha256:75cdf892daffadf3763ef61c16a6d7f8586216fce0b40bba7874a0b053121084
+    ports:
+      - "127.0.0.1:${DEVKIT_GRAFANA_PORT:-3300}:3000"
+      - "127.0.0.1:${DEVKIT_OTLP_GRPC_PORT:-4327}:4317"
+      - "127.0.0.1:${DEVKIT_OTLP_HTTP_PORT:-4328}:4318"
+    environment:
+      # The bundled components report usage to grafana.com by default, and Grafana downloads a
+      # plugin on start. All of it is turned off so that nothing leaves the machine.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /otel-lgtm/devkit-dashboards/devkit-review.json
+      LOKI_EXTRA_ARGS: -reporting.enabled=false
+      TEMPO_EXTRA_ARGS: -reporting.enabled=false
+      PYROSCOPE_EXTRA_ARGS: -usage-stats.enabled=false
+      # Claude Code exports delta counters by default, which Prometheus drops without this.
+      PROMETHEUS_EXTRA_ARGS: --enable-feature=otlp-deltatocumulative
+    volumes:
+      - ${XDG_CACHE_HOME:-${HOME}/.cache}/devkit/review/logs:/devkit-logs:ro
+      - ./collector.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - ./dashboards/provider.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/devkit.yaml:ro
+      - ./dashboards:/otel-lgtm/devkit-dashboards:ro
+      - data:/data
+
+volumes:
+  data:

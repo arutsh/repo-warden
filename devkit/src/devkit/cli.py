@@ -65,6 +65,11 @@ def cmd_install(args: argparse.Namespace, *, remove: bool) -> int:
     for step in steps:
         try:
             print(step())
+        except install.PartialInstall as e:
+            print(e.done)
+            for problem in e.problems:
+                print(f"devkit: {problem}", file=sys.stderr)
+            status = 1
         except install.InstallError as e:
             print(f"devkit: {e}", file=sys.stderr)
             status = 1
@@ -122,6 +127,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         for warning in target.warnings():
             print(f"    warning: {warning}")
     if top is not None:
+        print_review_state(top)
         try:
             print(f"git hook: {install.git_hook_state(str(top))}")
         except install.InstallError as e:
@@ -129,7 +135,24 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def print_review_state(top) -> None:
+    from .review import state
+
+    data = state.read(state.path_for(top))
+    loops = [(sid, s["loop"]) for sid, s in data["sessions"].items() if s.get("loop")]
+    last = data.get("last_review")
+    done = (last["at"], last["session"]) if last else None
+    if not loops and not done:
+        return
+    print("review:")
+    for sid, loop in loops:
+        print(f"  loop active: round {loop['round']} of {loop['max']}  (session {sid})")
+    if not loops:
+        print("  loop active: no")
+    print(f"  last review completed: {done[0] if done else 'never'}" + (f"  (session {done[1]})" if done else ""))
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="devkit", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -152,12 +175,35 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--staged", action="store_true", help="staged changes against HEAD (for pre-commit)")
     mode.add_argument("--range", metavar="BASE..HEAD", help="the files changed on HEAD since BASE (for CI)")
 
+    p = sub.add_parser("review", help="the review loop's commands, used by the devkit-review skill")
+    rsub = p.add_subparsers(dest="review_cmd", required=True)
+    for name, text in (("plan", "the active round as JSON: reviewers, models, checker, scope"),
+                       ("diff", "the diff the active round covers"),
+                       ("record", "record the round's findings (a JSON array on stdin)"),
+                       ("skip", "mark the review skipped (the user asked); the next stop says so"),
+                       ("verdict", "log the user's verdict on a finding up for discussion"),
+                       ("reset", "clear this repo's review state")):
+        rp = rsub.add_parser(name, help=text)
+        if name not in ("reset", "verdict"):
+            rp.add_argument("--session", help="required when more than one loop is active in the repo")
+        if name == "plan":
+            rp.add_argument("--start", action="store_true", help="start a loop now if none is active (on demand)")
+        if name == "skip":
+            rp.add_argument("--reason", required=True, help="why; shown to the user")
+        if name == "verdict":
+            rp.add_argument("finding_id", help="the id `record` printed, e.g. f-3a9c01de")
+            rp.add_argument("verdict", choices=["accepted", "rejected"])
+            rp.add_argument("--note", help="why; kept only when the user config sets rules.review.log_content")
+
     p = sub.add_parser("init", help="opt this repo in: write .devkit.yaml (never overwrites)")
     p.add_argument("--agents-md", action="store_true", help="also AGENTS.md, and CLAUDE.md importing it")
     p.add_argument("--openspec", action="store_true", help="also generic rules in openspec/config.yaml")
     p.add_argument("--ci", action="store_true", help="also a GitHub Actions workflow running `devkit check --range`")
+    return parser
 
-    args = parser.parse_args(argv)
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     if args.cmd == "hook":
         return run_hook(args.agent, args.event, sys.stdin, sys.stdout, sys.stderr)
     if args.cmd in ("install", "uninstall"):
@@ -168,6 +214,10 @@ def main(argv: list[str] | None = None) -> int:
         return check(os.getcwd(), staged=args.staged, spec=args.range, out=sys.stdout, err=sys.stderr)
     if args.cmd == "init":
         return cmd_init(args)
+    if args.cmd == "review":
+        from .review.command import run
+
+        return run(args, sys.stdin, sys.stdout, sys.stderr)
     return cmd_status(args)
 
 

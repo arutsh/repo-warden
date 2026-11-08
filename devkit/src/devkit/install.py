@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable
@@ -18,6 +19,7 @@ from . import rules
 from .adapters import claude, codex
 
 HOOK_TIMEOUT_S = 15
+TURN_HOOK_TIMEOUT_S = 30  # once per prompt or stop, and the review rule may snapshot the tree
 BACKUP_SUFFIX = ".devkit-backup"
 # `devkit` (or devkit.exe, any path, optionally quoted) as a word, then a subcommand; shared with self_guard.
 DEVKIT_RE = r"(?:^|[/\\'\"\s;&|(`])devkit(?:\.exe)?['\"]?\s+"
@@ -28,6 +30,14 @@ class InstallError(Exception):
     pass
 
 
+class PartialInstall(InstallError):
+    """Some files couldn't be installed or removed; `done` says what was changed anyway."""
+
+    def __init__(self, done: str, problems: list[str]):
+        super().__init__("\n".join(problems))
+        self.done, self.problems = done, problems
+
+
 @dataclass(frozen=True)
 class Agent:
     name: str
@@ -35,6 +45,7 @@ class Agent:
     hooks: Callable[[str], dict[str, list[dict[str, Any]]]]  # devkit exe -> {event: [matcher group]}
     on_install: str | None = None  # what the user must do next
     warnings: Callable[[], list[str]] = field(default=lambda: [])  # problems that stop the hooks running
+    assets_dir: Callable[[], Path] | None = None  # where the skill and agent files go
 
 
 def _claude_path() -> Path:
@@ -60,20 +71,27 @@ def _codex_warnings() -> list[str]:
     return []
 
 
-def _command(exe: str, agent: str, event: str) -> dict[str, Any]:
-    return {"type": "command", "command": f"{shlex.quote(exe)} hook {agent} {event}", "timeout": HOOK_TIMEOUT_S}
+def _command(exe: str, agent: str, event: str, timeout: int) -> dict[str, Any]:
+    return {"type": "command", "command": f"{shlex.quote(exe)} hook {agent} {event}", "timeout": timeout}
+
+
+def _group(exe: str, agent: str, name: str, matcher: str | None) -> dict[str, Any]:
+    """Tool hooks match tool names; turn hooks (no matcher) run on every prompt or stop."""
+    if matcher is None:
+        return {"hooks": [_command(exe, agent, name, TURN_HOOK_TIMEOUT_S)]}
+    return {"matcher": matcher, "hooks": [_command(exe, agent, name, HOOK_TIMEOUT_S)]}
 
 
 def _hooks(agent: str, adapter: ModuleType) -> Callable[[str], dict[str, list[dict[str, Any]]]]:
     def hooks(exe: str) -> dict[str, list[dict[str, Any]]]:
         """Only the events some rule runs in: each registered hook is a process per tool call."""
-        return {hook_event: [{"matcher": matcher, "hooks": [_command(exe, agent, name)]}]
+        return {hook_event: [_group(exe, agent, name, matcher)]
                 for name, (hook_event, phase, matcher) in adapter.HOOK_EVENTS.items() if rules.any_rule(phases=phase)}
     return hooks
 
 
 AGENTS: dict[str, Agent] = {
-    "claude": Agent("claude", _claude_path, _hooks("claude", claude)),
+    "claude": Agent("claude", _claude_path, _hooks("claude", claude), assets_dir=lambda: _claude_path().parent),
     "codex": Agent("codex", lambda: _codex_home() / "hooks.json", _hooks("codex", codex),
                    on_install="review and trust the new hooks in Codex with /hooks; they don't run until you do",
                    warnings=_codex_warnings),
@@ -183,20 +201,133 @@ def install(agent: str, exe: str) -> str:
         existing.extend(groups)
     notes = [f"{agent}: warning: {w}" for w in target.warnings()]
     if new == data:
-        return "\n".join([f"{agent}: already installed in {path}", *notes])
-    write_json(path, new, original)
-    return "\n".join([f"{agent}: installed in {path}", *([f"{agent}: {target.on_install}"] if target.on_install else []),
-                      *notes])
+        lines = [f"{agent}: already installed in {path}"]
+    else:
+        write_json(path, new, original)
+        lines = [f"{agent}: installed in {path}", *([f"{agent}: {target.on_install}"] if target.on_install else [])]
+    problems = []
+    if target.assets_dir:
+        base = target.assets_dir()
+        written, problems = install_assets(base)
+        if problems:
+            if written:
+                lines.append(f"{agent}: installed {len(written)} of {len(assets())} {SKILL} skill and agent files "
+                             f"in {base}")
+        else:
+            lines.append(f"{agent}: {'installed' if written else 'already installed'} the {SKILL} skill and "
+                         f"reviewer agents in {base}")
+    text = "\n".join([*lines, *notes])
+    if problems:
+        raise PartialInstall(text, [f"{agent}: {p}" for p in problems])
+    return text
 
 
 def uninstall(agent: str) -> str:
-    path = AGENTS[agent].config_path()
+    target = AGENTS[agent]
+    path = target.config_path()
     data, original = load_json(path)
     new = strip(data, agent)
     if new == data:
-        return f"{agent}: not installed in {path}"
-    write_json(path, new, original)
-    return f"{agent}: removed from {path}"
+        lines = [f"{agent}: not installed in {path}"]
+    else:
+        write_json(path, new, original)
+        lines = [f"{agent}: removed from {path}"]
+    problems = []
+    if target.assets_dir:
+        removed, problems = uninstall_assets(base := target.assets_dir())
+        if removed:
+            lines.append(f"{agent}: removed {len(removed)} {SKILL} skill and agent files from {base}")
+    text = "\n".join(lines)
+    if problems:
+        raise PartialInstall(text, [f"{agent}: {p}" for p in problems])
+    return text
+
+
+# The skill and reviewer agents (Claude). An agent file carries the marker line; the skill's directory
+# holds a marker file, so SKILL.md stays as the skill format has it.
+SKILL = "devkit-review"
+AGENT_MARKER = "<!-- devkit-managed -->"
+SKILL_MARKER = ".devkit-managed"
+_SKILL_MARKER_TEXT = "devkit-managed: `devkit install` refreshes this skill and `devkit uninstall` removes it\n"
+
+
+def assets() -> dict[str, str]:
+    """The shipped files, by path under the agent's config directory."""
+    root = resources.files("devkit") / "claude_assets"
+    files = {f"agents/{p.name}": p.read_text(encoding="utf-8")
+             for p in sorted((root / "agents").iterdir(), key=lambda p: p.name) if p.name.endswith(".md")}
+    files[f"skills/{SKILL}/SKILL.md"] = (root / "skills" / SKILL / "SKILL.md").read_text(encoding="utf-8")
+    return files
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:  # missing, a directory, unreadable: not a file devkit can use
+        return None
+
+
+def _is_skill(rel: str) -> bool:
+    return rel.startswith("skills/")
+
+
+def _ours(path: Path, skill: bool) -> bool:
+    """devkit wrote it, or may: an agent file with the marker line, a skill file in a marked directory."""
+    if skill:
+        return (path.parent / SKILL_MARKER).is_file()
+    text = _read_text(path)
+    return text is not None and AGENT_MARKER in text.splitlines()
+
+
+def _free(path: Path, skill: bool) -> bool:
+    """Nothing of the user's would be overwritten or adopted by writing it."""
+    if skill:
+        return not path.parent.exists() or (path.parent.is_dir() and not any(path.parent.iterdir()))
+    return not path.exists() and not path.is_symlink()
+
+
+def install_assets(base: Path) -> tuple[list[str], list[str]]:
+    """The files written, and why others were refused. An unchanged file isn't rewritten."""
+    written, problems = [], []
+    for rel, text in assets().items():
+        path, skill = base / rel, _is_skill(rel)
+        if not (_ours(path, skill) or _free(path, skill)):
+            what = "its directory has no " + SKILL_MARKER if skill else "no devkit marker"
+            problems.append(f"{path} was not written by devkit ({what}); left unchanged")
+            continue
+        try:
+            if skill and not (path.parent / SKILL_MARKER).is_file():
+                # First, so a SKILL.md devkit wrote is never left without its marker.
+                _atomic_write(path.parent / SKILL_MARKER, _SKILL_MARKER_TEXT, 0o644)
+            if _read_text(path) != text:
+                _atomic_write(Path(os.path.realpath(path)), text, 0o644)
+                written.append(rel)
+        except OSError as e:
+            problems.append(f"cannot write {path}: {e}")
+    return written, problems
+
+
+def uninstall_assets(base: Path) -> tuple[list[str], list[str]]:
+    """The managed files removed, and those that couldn't be; a file of the same name that isn't devkit's stays."""
+    removed, problems = [], []
+    for rel in assets():
+        path, skill = base / rel, _is_skill(rel)
+        if not _ours(path, skill):
+            continue
+        for p in (path, path.parent / SKILL_MARKER) if skill else (path,):
+            try:
+                p.unlink()
+                removed.append(str(p.relative_to(base)))
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                problems.append(f"cannot remove {p}: {e}")
+        if skill:
+            try:
+                path.parent.rmdir()  # only when empty: the user's own files in it stay
+            except OSError:
+                pass
+    return [r for r in removed if not r.endswith(SKILL_MARKER)], problems
 
 
 GIT_HOOK_MARKER = "# devkit-managed"

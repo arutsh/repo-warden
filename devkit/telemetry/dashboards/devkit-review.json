@@ -1,0 +1,767 @@
+{
+  "uid": "devkit-review",
+  "title": "devkit review",
+  "tags": [
+    "devkit"
+  ],
+  "editable": false,
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Activity",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Loops started",
+      "description": "Review loops started: by a stop with unreviewed changes, or on demand.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.loop_started\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "loops"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none"
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "Loops started per repo",
+      "description": "Review loops started, by repo directory name.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (devkit_repo_name) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.loop_started\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_repo_name}}"
+        }
+      ],
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 6,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "How loops ended, per repo",
+      "description": "clean: a round fixed nothing. max_rounds: the round limit was reached. not_completed: the agent stopped without recording the round. skipped: the user asked to skip it.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (devkit_repo_name, devkit_review_reason) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.loop_ended\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_repo_name}} \u00b7 {{devkit_review_reason}}"
+        }
+      ],
+      "gridPos": {
+        "x": 10,
+        "y": 1,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "Loops by rounds used",
+      "description": "Ended loops, by the round they ended in.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (devkit_review_round) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.loop_ended\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_round}} round(s)"
+        }
+      ],
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Review activity over time",
+      "description": "Loops started, rounds requested and loops ended.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (event_name) (count_over_time({service_name=\"devkit\"} | event_name=~\"devkit.review.(loop_started|round_requested|loop_ended)\" [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{event_name}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "points",
+            "pointSize": 8,
+            "showPoints": "always"
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "row",
+      "title": "Findings",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Findings by focus and outcome",
+      "description": "Every finding passed to `devkit review record`.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (devkit_review_focus, devkit_review_outcome) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.finding\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_focus}} \u00b7 {{devkit_review_outcome}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 17,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "Findings by model and outcome",
+      "description": "The same findings, by the reviewer's model.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (devkit_review_model, devkit_review_outcome) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.finding\" [$__range]))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_model}} \u00b7 {{devkit_review_outcome}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 17,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "row",
+      "title": "Quality",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Checker confirmation rate",
+      "description": "Of the findings the checker scored, the share it kept (fixed, discuss or question; score 50 or more). Findings dropped before checking, such as no evidence, are left out.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "(sum by (devkit_review_focus, devkit_review_model) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.finding\" | devkit_review_score != \"\" | devkit_review_outcome != `dropped` [$__range])) / sum by (devkit_review_focus, devkit_review_model) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.finding\" | devkit_review_score != \"\" [$__range]))) or (sum by (devkit_review_focus, devkit_review_model) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.finding\" | devkit_review_score != \"\" [$__range])) * 0)",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_focus}} \u00b7 {{devkit_review_model}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "User acceptance rate",
+      "description": "Of the discuss and question findings with a verdict, the share accepted. Only the latest verdict per finding counts.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "avg by (devkit_review_focus, devkit_review_model) (last_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.verdict\" | devkit_review_outcome=~`discuss|question` | label_format devkit_accepted=`{{ if eq .devkit_review_verdict \"accepted\" }}1{{ else }}0{{ end }}` | unwrap devkit_accepted [$__range]) by (devkit_review_finding_id, devkit_review_focus, devkit_review_model))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_focus}} \u00b7 {{devkit_review_model}}"
+        }
+      ],
+      "gridPos": {
+        "x": 8,
+        "y": 27,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "Findings with a verdict",
+      "description": "How many discuss and question findings the acceptance rate is based on.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (devkit_review_focus, devkit_review_model) (last_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.verdict\" | devkit_review_outcome=~`discuss|question` | label_format devkit_accepted=`{{ if eq .devkit_review_verdict \"accepted\" }}1{{ else }}0{{ end }}` | unwrap devkit_accepted [$__range]) by (devkit_review_finding_id, devkit_review_focus, devkit_review_model))",
+          "queryType": "range",
+          "legendFormat": "{{devkit_review_focus}} \u00b7 {{devkit_review_model}}"
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 27,
+        "w": 8,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "row",
+      "title": "Cost (Claude Code metrics)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "bargauge",
+      "title": "Cost by reviewer and model",
+      "description": "From claude_code_cost_usage: each session's total, so a session that began before the time range counts in full. Reviewer names need OTEL_LOG_TOOL_DETAILS=1; without it every custom agent, devkit's included, is one `custom` series.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_name, model) (max_over_time(claude_code_cost_usage_USD_total{agent_name=~\"devkit-review-.*|custom\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{agent_name}} \u00b7 {{model}}"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "bargauge",
+      "title": "Tokens by reviewer and model",
+      "description": "From claude_code_token_usage, all token types together.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (agent_name, model) (max_over_time(claude_code_token_usage_tokens_total{agent_name=~\"devkit-review-.*|custom\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{agent_name}} \u00b7 {{model}}"
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 37,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "no data yet",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "maxDataPoints": 1
+    },
+    {
+      "type": "table",
+      "title": "Sessions with reviews",
+      "description": "Each session that started a review loop, with its loops and the session's whole cost. Joined on the session id, which devkit's hooks and Claude Code's telemetry share.",
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "targets": [
+        {
+          "refId": "loops",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (session_id) (count_over_time({service_name=\"devkit\"} | event_name=\"devkit.review.loop_started\" [$__range]))",
+          "queryType": "instant",
+          "legendFormat": ""
+        },
+        {
+          "refId": "cost",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (session_id) (max_over_time(claude_code_cost_usage_USD_total[$__range]))",
+          "instant": true,
+          "range": false,
+          "legendFormat": "",
+          "format": "table"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "\u2013"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Session cost (USD)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyUSD"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {},
+      "maxDataPoints": 1,
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "type": "exclude",
+            "match": "any",
+            "filters": [
+              {
+                "fieldName": "Value #loops",
+                "config": {
+                  "id": "isNull",
+                  "options": {}
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "session_id": "Session",
+              "Value #loops": "Loops",
+              "Value": "Session cost (USD)"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}

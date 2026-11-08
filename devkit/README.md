@@ -38,7 +38,7 @@ The layers that enforce are:
 
 ```sh
 uv tool install ./devkit                 # from a repo-warden checkout; adds `devkit` to ~/.local/bin
-devkit install --agent claude            # registers the hooks in ~/.claude/settings.json
+devkit install --agent claude            # the hooks in ~/.claude/settings.json, plus the review skill and agents
 devkit install --agent codex             # registers the hooks in ~/.codex/hooks.json
 devkit status                            # what applies here and why
 ```
@@ -51,8 +51,12 @@ original file as `<file>.devkit-backup` (for example `settings.json.devkit-backu
 that isn't valid JSON. Running it again changes nothing. Claude Code reads hooks at start-up, so
 restart open sessions (or check them with `/hooks`).
 
-If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json`. If `CODEX_HOME`
-is set, it uses `$CODEX_HOME/hooks.json`.
+For Claude Code, install also adds the [`devkit-review` skill and its reviewer
+agents](#the-review-skill-and-reviewer-agents) to `~/.claude/skills/` and `~/.claude/agents/`, and
+uninstall removes them.
+
+If `CLAUDE_CONFIG_DIR` is set, devkit uses `$CLAUDE_CONFIG_DIR/settings.json` (and its `skills/` and
+`agents/`). If `CODEX_HOME` is set, it uses `$CODEX_HOME/hooks.json`.
 
 **Codex only runs hooks you have trusted.** After `devkit install --agent codex`, open Codex and run
 `/hooks` to review and trust the devkit entries. Until you do, Codex skips them. Trust is tied to
@@ -242,6 +246,246 @@ quoting the pattern.
 An invalid setting (an unknown key, a wrong type, `max_lines: 0`, a `pattern` that isn't a valid
 regular expression) is a config error, handled like any other: `devkit status` fails and a hook
 skips that file.
+
+### `review` (style, default `off`)
+
+When the agent tries to stop after changing code, devkit blocks the stop once per review round and
+tells the agent to run the `devkit-review` skill on its changes. The hook only decides; the agent
+and its reviewer subagents do the reviewing. This is early feedback, not enforcement.
+
+**What triggers a review.** With `review: block` and the repo in scope, a stop starts a review only
+when the working-tree snapshot differs from the one taken when the turn started, has not been
+reviewed already, and at least one changed path (since the last reviewed snapshot, else the
+session's start) does not match `skip_paths`. These never trigger one: a question-only turn,
+changes that existed before the session, a change that was restored exactly, a docs-only change
+covered by `skip_paths`, plan mode, running background tasks, and a directory that is not a git
+repo. With `warn`, the stop goes ahead and the user is told once per snapshot that the changes are
+unreviewed; the agent is not made to continue. Any failure (snapshot, state file, config) lets the
+stop go ahead with a one-line warning.
+
+**Rounds.** A loop runs at most `max_rounds` rounds. Round 1 covers the changes since the last
+review; each later round covers only the previous round's fixes. The loop ends when a round is
+recorded with no fixes or `max_rounds` is reached. If the agent stops without recording a requested
+round, the loop ends and the user is told the round was not completed. Either way the user sees a
+one-line summary, and the last snapshot counts as reviewed. A prompt from the user in the middle of
+a round ends the loop the same way, and its changes are reviewed with the next ones. A background
+task's `<task-notification>`, which Claude Code also delivers as a prompt, doesn't count as one.
+
+```yaml
+# ~/.config/devkit/config.yaml, or <repo>/.devkit.yaml
+rules:
+  review:
+    level: block          # off (default) | warn | block
+    max_rounds: 3         # 1 to 5
+    skip_paths: ["**/*.md", "docs/**"]
+    reviewers:            # focus: model (opus | sonnet | haiku | inherit)
+      correctness: opus
+      rules: sonnet
+      tests: sonnet
+      security: sonnet
+      history: sonnet
+    followup_reviewers: [correctness]   # the focuses that run in rounds 2 and later
+    checker: opus
+```
+
+A focus in `followup_reviewers` that `reviewers` leaves out still runs in follow-up rounds, on its
+default model. An unknown focus or model, or `max_rounds` outside 1 to 5, is a config error.
+
+**`devkit review`** is what the skill calls; it finds the repo from the current directory. When more
+than one session has an active loop, pass `--session <id>` (the hook's block message includes it).
+All of these except `reset`, `verdict` and `plan --start` exit non-zero, with a message, when no loop is
+active.
+
+| Command | Does |
+|---|---|
+| `plan` | prints the active round as JSON: round, `max`, `session`, the focuses with their models (all in round 1, `followup_reviewers` after), the `checker` model and the `scope` command |
+| `plan --start` | the same, starting a loop first when none is active (on-demand review of the changes since the last review). It attaches to the most recently active session; with no session known it refuses, so pass `--session <id>` to name one (a session devkit has not seen reviews the changes since `HEAD`) |
+| `diff` | the `--stat` and patch the active round covers, with `secrets` paths left out |
+| `record` | reads a JSON array of findings on stdin and records the round. Each has `focus`, `model`, `claim`, `outcome` (`fixed`, `discuss`, `question` or `dropped`), and, unless dropped, `file`, `line` and a `score` of 0 to 100. A dropped finding needs a `reason` and may leave out `file`, `line` and `score`. The fixed, open (`discuss` plus `question`) and dropped counts are derived from the findings. Invalid input is rejected and nothing is recorded. A round is recorded once: a second `record` or `skip` for it is refused. It prints the counts and, when they were logged, the ids of the findings left open |
+| `skip --reason TEXT` | ends the review without one, for when the user asked; the next stop tells the user it was skipped and why |
+| `verdict ID accepted\|rejected [--note TEXT]` | logs your verdict on a finding up for discussion (see [Review logs](#review-logs)) |
+| `reset` | clears this repo's review state |
+
+`devkit status` shows the review settings with their sources, and, once the repo has review state,
+whether a loop is active (and its round) and when a review last completed.
+
+**State and cache.** State lives in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/<hash of the repo
+path>.json`, outside the repo, with the snapshot index copies. It keeps the last 100 reviewed trees
+and drops sessions idle for 7 days. `devkit review reset` deletes it, but not the review logs in
+`logs/` beside it (see [Review logs](#review-logs)).
+
+**Not a security boundary.** The agent can run `devkit review record` or `skip` without reviewing
+anything. Skips and uncompleted rounds are always shown to the user, but nothing stops them.
+
+**Snapshots.** A snapshot of the working tree is a git tree id. It holds the tracked and untracked,
+non-ignored files, minus every path that matches the `secrets` patterns. It is built through a copy
+of the index in `${XDG_CACHE_HOME:-~/.cache}/devkit/review/`. Every git call uses repo-warden's
+hardening: no system or global config, and no hooks, fsmonitor, pager, network, or repo-configured
+filter, diff or merge drivers. Because global config is ignored, a `core.excludesFile` set there is
+ignored too; only the repo's `.gitignore`, `.git/info/exclude` and `~/.config/git/ignore` apply.
+Snapshots write unreferenced objects to `.git/objects`, which `git gc` removes. They never change a
+ref, the index or the working tree.
+
+Paths that match a `secrets` pattern are left out even when `secrets.exempt` covers them, so review
+never sees them. A nested git repo with no commit yet (right after `git init x` inside the repo)
+makes git refuse to snapshot. Until it is committed, removed or ignored, every stop goes ahead with a
+one-line warning, and no review runs.
+
+**Inside cplt** (checked 2026-10-31): snapshots work. cplt's git guard refuses `git write-tree`, so
+devkit builds the tree objects itself and writes them with `git hash-object`, which the guard
+allows. The id is the same one `write-tree` would give. `~/.cache` is writable inside cplt, objects
+can be written to `.git/objects`, and no ref changes.
+
+## The review skill and reviewer agents
+
+The `review` rule only decides when a round is due; the `devkit-review` skill runs it.
+`devkit install --agent claude` installs, into `~/.claude/` (or `$CLAUDE_CONFIG_DIR`):
+
+- `skills/devkit-review/SKILL.md`, with a `.devkit-managed` file beside it;
+- `agents/devkit-review-{correctness,rules,tests,security,history,checker}.md`, each with a
+  `<!-- devkit-managed -->` line after its frontmatter.
+
+Installing again refreshes these files when devkit ships a newer version and leaves unchanged ones
+alone; a local edit to a managed file is replaced. A file of the same name without the marker, or a
+`skills/devkit-review/` directory holding other files and no marker, is never overwritten: install
+names it, installs the rest, and exits 1. Uninstall removes only the marked files, and the skill
+directory once it is empty. Restart Claude Code sessions after installing.
+
+**A round.** The skill runs `devkit review plan` and `diff`, then starts one reviewer subagent per
+focus, in parallel. Each starts with a fresh context, never a fork of your session, and its prompt
+holds only the change's intent, the `devkit review diff` command, the paths of the rule files to
+read, and a list of things that don't count as findings. Reviewers can read files and run read-only
+git and `devkit review` commands; they have no edit tools. A finding needs a file, line, quoted
+code, claim and failure scenario, or it is dropped as `no evidence`. A checker subagent then
+re-checks each finding by itself (at most 10 at a time) and scores it 0, 25, 50, 75 or 100: 75 or
+more is confirmed, 50 is put to you as a question, and below 50 it is dropped. The main session
+fixes only the obvious confirmed findings (local, one evident correct form, no other behaviour
+change, covered by a test), re-runs the tests, and never commits or stages. It records the round
+with `devkit review record` and ends with **Fixed**, **To discuss** (each with its finding id) and
+**Dropped: N**. When you accept or reject a finding up for discussion, it runs
+`devkit review verdict`.
+
+| Focus | Default model | Looks for |
+|---|---|---|
+| `correctness` | `opus` | bugs in the changed lines and the code they call or that calls them |
+| `rules` | `sonnet` | breaks of `AGENTS.md`, `CLAUDE.md`, `.devkit.yaml`, and the specs and tasks of the openspec change in progress |
+| `tests` | `sonnet` | changed behaviour with no test, and tests that can't fail |
+| `security` | `sonnet` | injection, path handling, secrets, trust boundaries |
+| `history` | `sonnet` | regressions against past fixes, from `git log` and `git blame` |
+| checker | `opus` | not a focus: re-checks one finding against the code |
+
+**Changing the models.** Set `reviewers`, `followup_reviewers` and `checker` in the `review` rule
+([config above](#review-style-default-off)). The skill passes each model to the subagent call, so a
+change applies from the next round, with no reinstall. Leave a focus out of `reviewers` to stop
+running it. `inherit` runs the subagent on your session's model. The `model` in each agent file is
+used only when the agent is started some other way.
+
+**Cost.** Each round runs several subagents. With the defaults, round 1 runs five reviewers (one on
+`opus`, four on `sonnet`) and one `opus` checker per finding left after duplicates and findings
+without evidence are dropped. Rounds 2 and 3 run only `followup_reviewers` (`correctness` on `opus`)
+over the previous round's fixes, plus their checkers. A loop runs at most `max_rounds` rounds, and
+only on turns that changed files. To spend less: drop focuses from `reviewers` (`history` adds the
+least in small repos), move them to `sonnet` or `haiku`, set `max_rounds: 1`, add `skip_paths`, or
+use `review: warn` and run the skill only when you want a review. Claude Code's own telemetry
+reports the cost per model and subagent.
+
+**On demand.** Type `/devkit-review` (or ask for a devkit review) in a Claude Code session in the
+repo. The skill runs `devkit review plan --start`, which starts a loop over the changes since the
+last review, the same loop the stop hook would start. With nothing new to review it says so and
+stops. On-demand reviews need `review` at `warn` or `block` in the repo, since the stop hook ends the
+loop: at `block` it then requests the follow-up rounds as usual; at `warn` it only tells you a
+follow-up round is due, and the loop ends at the stop after that.
+
+## Review logs
+
+devkit appends a record for each step of a review loop to a daily file,
+`${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/<YYYY-MM-DD>.jsonl` (UTC dates), one JSON object per
+line. They sit next to the review state because `~/.cache` is writable inside cplt and
+`~/.local/state` is not (checked 2026-11-07). A cache cleaner that empties `~/.cache` deletes them too.
+devkit records only what the agent's own telemetry can't know: loops, rounds, findings, scores,
+outcomes and verdicts. Cost, tokens and durations come from Claude Code's OpenTelemetry export. The
+logs stay on this machine; devkit never sends them anywhere.
+
+Records follow the OpenTelemetry log data model: `timestamp` (RFC 3339, nanoseconds),
+`severity_text`, `severity_number`, `body`, `resource` (`service.name: devkit` and its version) and
+`attributes`. Every record's attributes carry `event.name`, `session.id` (the agent's session id),
+`devkit.review.loop_id`, `devkit.review.round`, and the repo as `devkit.repo.name` (its directory
+name) and `devkit.repo.path_hash` (a hash of its path). The home path never appears; an absolute
+file path in a finding is made repo-relative, or written with `~` for the home directory.
+
+| `event.name` | When | Its own attributes (under `devkit.review.`) |
+|---|---|---|
+| `devkit.review.loop_started` | a stop (or `plan --start`) starts a loop | `trigger` (`stop` or `on_demand`), `max_rounds` |
+| `devkit.review.round_requested` | a round is asked for | |
+| `devkit.review.round_recorded` | `record` or `skip` | `fixed`, `open`, `dropped`, or `skipped: true` |
+| `devkit.review.finding` | `record`, one per finding | `finding_id`, `focus`, `model`, `outcome`, `score` (when checked), plus `code.file.path` and `code.line.number` |
+| `devkit.review.loop_ended` | the loop ends | `reason` (`clean`, `max_rounds`, `not_completed` or `skipped`), the loop's total `fixed` and `open` |
+| `devkit.review.verdict` | `devkit review verdict` | `finding_id`, `verdict`, and the finding's repo, session, loop, round, focus, model, outcome and path |
+
+A `finding` record, as written by default:
+
+```json
+{
+  "timestamp": "2026-11-07T17:02:50.262215000Z",
+  "severity_text": "INFO",
+  "severity_number": 9,
+  "body": "finding f-67b859f2 fixed",
+  "resource": {"service.name": "devkit", "service.version": "0.2.0"},
+  "attributes": {
+    "event.name": "devkit.review.finding",
+    "devkit.repo.name": "repo",
+    "devkit.repo.path_hash": "01097951bd818d59",
+    "session.id": "0f5c7c1e-8d1a-4c2b-9a51-3b7f2d9e6a10",
+    "devkit.review.loop_id": "l-fbccb88df205",
+    "devkit.review.round": 1,
+    "devkit.review.finding_id": "f-67b859f2",
+    "devkit.review.focus": "correctness",
+    "devkit.review.model": "opus",
+    "devkit.review.outcome": "fixed",
+    "devkit.review.score": 80,
+    "code.file.path": "src/app.py",
+    "code.line.number": 1
+  }
+}
+```
+
+**Content.** By default no record holds text from the code or the review: no quote, claim, failure
+scenario, drop reason or note. With `log_content: true` in the user config, finding records also carry
+`devkit.review.quote`, `devkit.review.claim`, `devkit.review.failure_scenario` and (when dropped)
+`devkit.review.drop_reason`, a skip carries its reason and a verdict its `--note`, as
+`devkit.review.note`. The home directory is written as `~` wherever it appears in a record. A finding on a path that matches the
+`secrets` patterns never carries text, even then. Only the user config can turn `log_content` on: in
+`.devkit.yaml` it is ignored, and `devkit status` lists it under "ignored settings".
+
+```yaml
+# ~/.config/devkit/config.yaml
+rules:
+  review:
+    log: true                # false: write no records at all
+    log_content: false       # user config only
+    log_retention_days: 30   # files older than this are deleted on the next write
+```
+
+**Retention.** Each write deletes the day files older than `log_retention_days` (default 30).
+
+**Failures.** A record that can't be written (directory not writable, lock held for over 2 s) gives a
+one-line `devkit:` warning on stderr. The hook or command that wrote it goes on as if it had
+succeeded; only `verdict`, whose whole job is the record, then exits non-zero.
+
+**Verdicts.** `devkit review record` prints the ids of the findings left open (`discuss` or
+`question`), and the skill shows each one in its To discuss list. It prints none when the records
+weren't written (`log: false`, or a failed write), since a verdict could not find them. The id covers
+the loop, round, focus, path, line and claim. Once you've decided, run
+`devkit review verdict <finding_id> accepted|rejected [--note TEXT]`. It finds the finding in the logs
+within the retention period and appends a `verdict` record that names it, so the dashboard can show
+how often discussed findings from each focus and model turn out to be right. An id that wasn't
+recorded within the retention period exits non-zero and writes nothing, and so does `verdict` with
+`log: false`. `--note` is kept only with `log_content`. A verdict can be given on any recorded
+finding, a fixed one included, and given again: the dashboard counts the latest one per finding.
+
+**Dashboard.** [`telemetry/`](telemetry/README.md) has an optional local Grafana stack (Docker
+Compose, loopback only) that reads these logs and Claude Code's own telemetry. Its dashboard shows
+loops, findings, checker and user agreement, and the cost of each reviewer. Nothing starts it but you.
 
 ## Claude Code mapping
 

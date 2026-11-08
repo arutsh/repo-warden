@@ -140,6 +140,8 @@ def _apply(cfg: Config, layer: dict[str, Any], label: str, *, repo: bool) -> Non
                     cfg.ignored.append(f"rules.{name}.level: {value} ({label}: a repo cannot loosen a guard rule)")
                 elif value != rc.level or not repo:
                     rc.level, rc.sources["level"] = value, label
+            elif repo and key in rule.user_only:
+                cfg.ignored.append(f"rules.{name}.{key} ({label}: only the user config sets this)")
             elif repo and rule.guard and key not in (rule.repo_settings or ()):
                 cfg.ignored.append(f"rules.{name}.{key} ({label}: a repo cannot loosen a guard rule)")
             else:

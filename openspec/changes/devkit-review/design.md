@@ -46,6 +46,7 @@ For Codex (Codex hooks docs, 2026-10-24):
 The `Stop` hook is a `type: "command"` hook, `devkit hook claude stop`. Its whole job is to decide whether to block, with "run review round N of M using the devkit-review skill" as the reason. The main session then starts the reviewers and makes the fixes.
 
 **Alternatives rejected:**
+- **An MCP server instead of the CLI and skill:** an MCP server only answers tool calls. It can't see a turn end or block a stop, so the hooks would still need the CLI. It also can't start subagents, because Claude Code doesn't support MCP sampling, so the process would still need the skill. It would run in every session, including repos that aren't opted in, and its tool calls don't carry the hook's `session_id`, so it would need `--session` resolution just as the CLI does. The only gain would be typed input for `record`, which a findings file covers (D8). A narrower read-only MCP server for reviewers is deferred (D8).
 - **A `type: "agent"` Stop hook:** it is experimental and Claude-only. Its subagent has read tools only, so it can't fix anything, and it can't start parallel reviewers.
 - **A `type: "prompt"` hook:** it is a single LLM call that can't see the code.
 - **Running `claude -p` from the hook:** a nested session that doesn't share the main context. It has its own cost, timeouts and sandbox problems, and it is Claude-only.
@@ -74,9 +75,11 @@ devkit-core D4 kept git out of hooks because tool hooks run on every tool call. 
 To take a snapshot:
 1. Copy the repo's index (`git rev-parse --git-path index`) to a temp file in the devkit cache directory.
 2. With `GIT_INDEX_FILE` set to that copy, run `git add -A -- . <excludes>`.
-3. Run `git write-tree`.
+3. Build the tree objects from `git ls-files -s -z` on that copy, and write them all with one `git hash-object -w -t tree --no-filters --stdin-paths` call. devkit computes each tree's id itself, so the parent trees can be built before anything is written, and it checks that git returns the same ids.
 
-The tree id is the fingerprint, and it can be diffed directly with `git diff <tree> <tree>`. Because the index is a copy, its stat cache makes `add -A` cheap, and the user's index and refs are never touched. `git write-tree` adds unreferenced objects, which `git gc` removes eventually. If a stored tree id has been removed, the state falls back as if it had no baseline.
+The result is the same tree id that `git write-tree` would give. `write-tree` isn't used because cplt's git guard refuses subcommands it doesn't know, `write-tree` and `mktree` among them (checked 2026-10-31). `ls-files`, `add`, `rm` and `hash-object` all work inside cplt.
+
+The tree id is the fingerprint, and it can be diffed directly with `git diff <tree> <tree>`. Because the index is a copy, its stat cache makes `add -A` cheap, and the user's index and refs are never touched. Writing the snapshot adds unreferenced objects, which `git gc` removes eventually. If a stored tree id has been removed, the state falls back as if it had no baseline.
 
 **Excludes:** every effective `secrets` pattern becomes `:(exclude,icase,glob)**/<pattern>`, plus the repo's ignore rules (which `add -A` already respects). So untracked `.env*` files never enter the object database or a diff.
 
@@ -107,7 +110,7 @@ Location: `${XDG_CACHE_HOME:-~/.cache}/devkit/review/<sha256(realpath(top))[:16]
 - Access is serialised with an `fcntl` lock and written with temp file plus `os.replace`.
 - `reviewed` keeps the last 100 trees. Sessions not updated for 7 days are pruned on write.
 - A file that is unreadable or invalid is treated as empty, with a warning. This is the fail-open behaviour.
-- `SessionStart` with `source: resume` keeps an existing entry for that session. Other sources reset `baseline`.
+- `SessionStart` for a session that already has an entry keeps it, whatever the `source`. Claude's auto-compaction fires `SessionStart` (`source: compact`) mid-turn with the same session id, and resetting `baseline` then would drop the changes made before it from the review. A new session id gets a fresh entry.
 
 ### D6. The state machine at `stop`
 ```
@@ -124,6 +127,7 @@ if cur == s.turn_start or cur in reviewed: allow
 base = s.last_reviewed or s.baseline
 if every changed path in diff(base, cur) matches skip_paths: mark reviewed(cur); allow
 level == warn: notify once for cur; allow
+if another session in this repo has an active loop: allow   # second-session guard, D12(b)
 s.loop = {round 1, from: base, at: cur, record: None}; block(1)
 ```
 
@@ -137,6 +141,8 @@ Each request blocks once, and a missing record ends the loop. So a turn can be b
 
 The `turn_start` check is what keeps question-only turns free. A turn that was interrupted never reaches Stop, so its changes are not reviewed then. They are picked up by the next turn that changes something, because round 1 covers everything since `last_reviewed`.
 
+`UserPromptSubmit` sets `turn_start = cur`. If a loop is still open, the user has interrupted it: the loop ends as `not_completed` and is reviewed with the next changes. Claude Code also delivers a finished background task's `<task-notification>` as a `UserPromptSubmit`, whose `prompt` starts with that tag; no other payload field tells it apart (recorded with Claude Code 2.1.319). Such a prompt continues the current turn, so the hook ignores it before taking a snapshot. Without this, a reviewer run in the background ended its own round. The skill also runs reviewers and checkers in the foreground, so a round doesn't depend on this check.
+
 ### D7. The `devkit review` command
 Each subcommand finds the repo from the cwd and the session from the state's single active loop for that repo. If more than one session has an active loop, `--session` is required, and the hook's reason text always includes it.
 
@@ -147,9 +153,9 @@ Each subcommand finds the repo from the cwd and the session from the state's sin
   ```
   Round 1 lists every configured focus; later rounds list `followup_reviewers`.
 - **`diff`** prints `git diff --stat` followed by the full diff for the round's `from..at`, using the D4 excludes and hardening.
-- **`record`** reads a JSON array of findings on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10).
+- **`record`** reads a JSON array of findings on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10). It prints the counts and, when the records were logged, the `finding_id` of each open finding, which the skill shows in its To discuss list (D8).
 - **`skip`** writes a skipped record for the round.
-- **`verdict`** appends a verdict log record.
+- **`verdict`** appends a verdict log record. It is the one command that exits non-zero when its log write fails, since the record is all it does.
 - **`reset`** deletes the state file.
 
 The skill never reads the YAML config; everything it needs comes from `plan`.
@@ -178,8 +184,9 @@ The skill passes the model from `plan` through the Agent tool's `model` paramete
 **Reviewer prompt contract.** The prompt the skill writes for each reviewer contains:
 1. the change intent, in 1–3 sentences on *what* the change does, never *why it is correct*;
 2. the scope command;
-3. the list of things that don't count as findings;
-4. the output format: one JSON object per finding with `file`, `line`, `quote`, `claim`, `failure_scenario` and `focus`.
+3. the paths of the rule files to read (`AGENTS.md`, `CLAUDE.md`, the active openspec change). Subagents already load `CLAUDE.md` and `AGENTS.md`, so pasting them would double the tokens and risk the main session paraphrasing them;
+4. the list of things that don't count as findings;
+5. the output format: one JSON object per finding with `file`, `line`, `quote`, `claim`, `failure_scenario` and `focus`.
 
 **Not findings** (adapted from Anthropic's code-review plugin):
 - issues that already existed before the change;
@@ -211,10 +218,12 @@ The plugin uses a single threshold of 80. Splitting it here keeps uncertain find
 - fixes the obvious findings (spec definition);
 - re-runs the relevant tests;
 - lists the rest, each with its evidence and any objection it has;
-- pipes every finding, with its outcome, into `devkit review record`;
+- writes every finding, with its outcome, to a JSON file in its scratch directory and runs `devkit review record < <file>`. Findings quote code, and inlining that in a heredoc or `echo` breaks on quotes and `$`;
 - shows each finding's id in the To discuss list, so a later `verdict` can refer to it.
 
 Its final message has three parts: **Fixed**, **To discuss**, **Dropped: N** (with reasons grouped). The skill also works on demand (`/devkit-review`). With no active loop, it starts one through `devkit review plan --start`, so manual and hook-started runs share the same state.
+
+**Deferred: read-only MCP tools for reviewers.** Reviewers have Bash only for `devkit review diff`, `git log` and `git blame`. A small devkit MCP server could expose those three as read-only tools, so the agent definitions could drop Bash. That would close the "reviewers could change files" risk instead of relying on the prompt. It is built only if Bash misuse shows up in practice, because it adds a server process to every session.
 
 ### D9. Installing the skill and agents
 `install --agent claude` copies the files into `$CLAUDE_CONFIG_DIR` or `~/.claude`, under `skills/` and `agents/`.
@@ -236,12 +245,16 @@ Claude Code already exports OTel (checked 2026-10-24 against its monitoring docs
 
 So devkit does **not** measure cost, tokens or durations. It records only what Claude can't know: loops, rounds, findings, scores, outcomes and verdicts.
 
-**Format.** Records follow the OTel log data model as JSON lines: `timestamp` (RFC 3339 with nanoseconds), `severity_text`, `body`, `attributes`, `resource`. They are appended to a daily file under `${XDG_STATE_HOME:-~/.local/state}/devkit/review/`.
+**Format.** Records follow the OTel log data model as JSON lines: `timestamp` (RFC 3339 with nanoseconds), `severity_text`, `body`, `attributes`, `resource`. They are appended to a daily file under `${XDG_CACHE_HOME:-~/.cache}/devkit/review/logs/`, next to the state file. `XDG_STATE_HOME` would be the natural place, but `~/.local/state` is read-only inside cplt (checked 2026-11-07) and `~/.cache` is writable. The cost is that a cache cleaner can delete the history.
 
 Each record is written as one line, in a single `write()` call, to a file opened with `O_APPEND`, while holding an `fcntl` lock. The lock keeps records from concurrent sessions from interleaving.
 
 **Ids:**
-- `finding_id` is `f-` followed by the first 8 hex characters of sha256 over loop_id, round, file, line and claim. It is stable, and short enough to type in `verdict`.
+- `loop_id` is `l-` followed by 12 hex characters of sha256 over the session, the loop's start trees and its start time. It is stored in the loop state and is the same in every round.
+- `finding_id` is `f-` followed by the first 8 hex characters of sha256 over loop_id, round, focus, file (as logged), line and claim. It is stable, and short enough to type in `verdict`. The focus keeps two reviewers' identical claims apart when the main session doesn't merge them.
+- `loop_started` carries `trigger`: `stop` for a hook-started loop, `on_demand` for `plan --start`.
+
+**What the records may hold.** Agent-written text (quote, claim, failure scenario, drop reason, skip reason, verdict note) is logged only with the user's `log_content`, and never for a finding on a `secrets` path. Every text field has the home directory replaced by `~`, and an absolute path inside the repo is made repo-relative. The state machine stays pure: it returns its log events with its decision, and the caller writes them after releasing the state lock.
 - `session.id` is the hook's `session_id`. If it matches Claude's own OTel `session.id`, which a task verifies, the dashboard can join devkit records to Claude's cost data.
 
 **Alternatives rejected:**
@@ -265,8 +278,8 @@ The compose file runs the `grafana/otel-lgtm` image, pinned to a tag at least tw
 - the dashboard, provisioned.
 
 Ports are published on `127.0.0.1` only:
-- 3000 for Grafana;
-- 4317 and 4318 for OTLP.
+- 3300 for Grafana (3000 is a common dev-server port);
+- 4327 and 4328 for OTLP, so they don't clash with a collector already on the standard 4317 and 4318.
 
 **Collector pipelines:**
 - `filelog` (devkit JSONL) → Loki;
@@ -279,7 +292,7 @@ There is no other exporter.
   - loops, rounds per loop, and how loops ended;
   - findings by focus, by model and by outcome;
   - checker confirmation rate per focus and model: (confirmed + questions) out of all checked;
-  - user acceptance rate: accepted verdicts out of all verdicts.
+  - user acceptance rate: accepted out of all verdicts on `discuss` and `question` findings, counting the latest verdict per `finding_id`. The verdict record carries the finding's outcome, focus and model, so no join is needed.
 - **From Claude's metrics:** `claude_code_cost_usage` and `claude_code_token_usage`, filtered to `agent_name=~"devkit-review-.*"` and grouped by `agent_name` and `model`.
 
 **Privacy trade-off.** Claude Code reports custom agent names as `"custom"` unless `OTEL_LOG_TOOL_DETAILS=1` is set. That same setting also exports Bash commands and file paths. The README shows both env blocks:
@@ -307,7 +320,7 @@ Codex subagents are defined in TOML, and I've only seen them described by third 
 - When it is set, the skill runs `codex exec review --base <base> --json` in round 1, or `--uncommitted` where that fits better. It runs in the background, because Bash's default timeout is 2 minutes. The exact subcommand and flags must be checked with `codex exec review --help` first, because third-party sources disagree.
 - Codex findings are turned into the reviewer JSON format and go through the same checker. Nothing from Codex is trusted unchecked.
 - A missing `codex` binary or missing authentication skips this step, with a notice in the round's output.
-- **Recursion:** a Codex review doesn't change the working tree, so if Codex has devkit hooks installed, its own Stop decision sees `cur == turn_start` and doesn't trigger. As a second safeguard, the decision won't start a loop in a repo where a different session has an active loop.
+- **Recursion:** a Codex review doesn't change the working tree, so if Codex has devkit hooks installed, its own Stop decision sees `cur == turn_start` and doesn't trigger. As a second safeguard, the decision won't start a loop in a repo where a different session has an active loop. This guard is built with the stop decision (task 3.2), for every agent.
 - **Sandbox:** inside cplt, Codex needs network access to OpenAI, read access to `~/.codex`, and its own Linux sandbox, which may clash with cplt. This needs a live check.
 - The same "external reviewer command" shape also allows `claude -p` as the external reviewer of a Codex session.
 
@@ -335,4 +348,6 @@ Codex subagents are defined in TOML, and I've only seen them described by third 
 ## Open Questions
 
 - The checker thresholds (75 and 50) and the default model for each focus may need tuning after real use. They are config or skill-text changes, not spec changes.
+- Checker cost: one checker per finding, on `opus`, from up to five reviewers. If that proves too costly, one checker per reviewer's batch of findings would cut the calls while keeping the checker independent of the reviewer. This is a skill-text change.
 - Whether the `history` focus is worth its cost in small repos. It can be removed from `reviewers` per repo.
+- Whether devkit's own reviewers are worth keeping next to Claude Code's built-in `/code-review`. The parts only devkit provides are the trigger, the rounds, the record and the logs. Claude's built-in review can't replace those, but it could replace some of the reviewers. One option is a pluggable reviewer step: the stop hook's block reason tells the agent to run `/code-review` without `--fix`, and the skill turns its findings into the `record` JSON, the same kind of translation D12(b) plans for Codex. Run both on real changes and compare them on the dashboard's confirmation rate, acceptance rate and cost. If the built-in does as well on correctness, drop the correctness, tests and security reviewers and keep `rules` and `history`, which are specific to this repo. Investigate only if the dashboard suggests it, or if keeping the reviewer prompts up becomes a burden. Not part of this change.
