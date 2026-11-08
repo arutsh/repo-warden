@@ -113,11 +113,19 @@ def notification(cwd):
                           "</task-notification>"), "prompt_id": "80cdefa9-04c1-4d53-ba41-702b1f3c6209"}
 
 
-def test_task_notification_does_not_end_the_round(opted_in):
+# Recorded: before its notification, a subagent's final report is handed back as an agent message.
+def handback(cwd):
+    return prompt(cwd, 'Another Claude session sent a message:\n<agent-message from="acb0375adafc325c8">\n'
+                       "[Subagent hand-back] The text below is the final report of a subagent this session "
+                       "delegated to.\n  []\n</agent-message>\n")
+
+
+@pytest.mark.parametrize("delivery", [notification, handback])
+def test_task_notification_does_not_end_the_round(opted_in, delivery):
     start_turn(opted_in)
     (opted_in / "src" / "app.py").write_text("a = 2\n")
     assert stop(opted_in)[0]["decision"] == "block"
-    assert hook("user-prompt-submit", notification(opted_in)) == (None, "")  # a reviewer finished
+    assert hook("user-prompt-submit", delivery(opted_in)) == (None, "")  # a reviewer finished
     assert loop(opted_in)["round"] == 1
     set_record(opted_in, fixed=0, open=0, dropped=0)
     assert stop(opted_in, active=True) == ({"systemMessage": "[devkit review] review: 1 round, 0 fixed, 0 to discuss"},
