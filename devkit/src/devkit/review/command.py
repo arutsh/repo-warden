@@ -236,7 +236,11 @@ def run(args, stdin: TextIO, out: TextIO, err: TextIO) -> int:
         elif sub == "diff":
             diff(top, secrets, args.session, out)
         elif sub == "record":
-            rec, open_ids = record(top, settings, secrets, args.session, stdin)
+            if args.file:  # devkit opens it, so the agent needs no permission to redirect from outside the repo
+                with open(args.file, encoding="utf-8") as f:
+                    rec, open_ids = record(top, settings, secrets, args.session, f)
+            else:
+                rec, open_ids = record(top, settings, secrets, args.session, stdin)
             print(f"recorded: {rec['fixed']} fixed, {rec['open']} open, {rec['dropped']} dropped", file=out)
             if open_ids:
                 print("open finding ids: " + " ".join(open_ids), file=out)

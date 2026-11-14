@@ -43,7 +43,7 @@ The user wants every coding session that changes code to end with an independent
   - a Grafana review dashboard;
   - documented environment settings to turn on Claude Code's built-in telemetry. That telemetry already reports cost and tokens for each model, subagent and skill.
 - **`devkit install --agent claude`** also installs the skill and the reviewer agents into `~/.claude/`. Both are marked as devkit-managed, and the installer never overwrites a skill or agent of the same name that it didn't install.
-- **External Codex reviewer and Codex as the main agent: designed here, deferred.** Configuration and behaviour are described in the design so the Claude implementation leaves room for them. They are built only once Codex credentials are available.
+- **External Codex reviewer and Codex as the main agent: moved to the change `devkit-review-codex`.** The Claude implementation leaves room for them; see the design's D12.
 
 ## Capabilities
 
@@ -79,6 +79,6 @@ The user wants every coding session that changes code to end with an independent
 - **Model usage**: each round that is triggered starts several reviewer subagents and one checker per finding. Rounds 2 and 3 are kept small.
 - **Dependencies**: no Python dependency is added; devkit writes plain JSONL and doesn't use the OTel SDK. The optional telemetry stack needs Docker. This builds on devkit-core groups 1–3 being merged.
 - **Out of scope**:
-  - a Codex adapter for `Stop` and the Codex external reviewer (deferred, see design);
+  - a Codex adapter for `Stop` and the Codex external reviewer (moved to `devkit-review-codex`);
   - running reviews in CI or pre-commit;
   - posting reviews to GitHub PRs.

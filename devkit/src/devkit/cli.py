@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     rsub = p.add_subparsers(dest="review_cmd", required=True)
     for name, text in (("plan", "the active round as JSON: reviewers, models, checker, scope"),
                        ("diff", "the diff the active round covers"),
-                       ("record", "record the round's findings (a JSON array on stdin)"),
+                       ("record", "record the round's findings (a JSON array from --file, or on stdin)"),
                        ("skip", "mark the review skipped (the user asked); the next stop says so"),
                        ("verdict", "log the user's verdict on a finding up for discussion"),
                        ("reset", "clear this repo's review state")):
@@ -188,6 +188,8 @@ def build_parser() -> argparse.ArgumentParser:
             rp.add_argument("--session", help="required when more than one loop is active in the repo")
         if name == "plan":
             rp.add_argument("--start", action="store_true", help="start a loop now if none is active (on demand)")
+        if name == "record":
+            rp.add_argument("--file", metavar="PATH", help="read the findings from this file instead of stdin")
         if name == "skip":
             rp.add_argument("--reason", required=True, help="why; shown to the user")
         if name == "verdict":

@@ -115,7 +115,7 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
 
 ## 8. End-to-end check in Claude Code
 
-- [ ] 8.1 In a scratch repo opted in with `review: block`, run a real Claude Code session with the devkit installed. Verify, and note in the PR:
+- [x] 8.1 In a scratch repo opted in with `review: block`, run a real Claude Code session with the devkit installed. Verify, and note in the PR:
   - a question-only prompt ends with no review;
   - a prompt that edits code is blocked into round 1, and parallel reviewer subagents run on their configured models;
   - a planted obvious bug is fixed, uncommitted;
@@ -124,14 +124,10 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - the summary line appears;
   - `devkit review verdict` on the discussed finding is recorded;
   - the dashboard shows the loop.
+
+  Done 2026-11-14 with headless `claude -p` sessions (Claude Code telemetry on). The first run found that `record < file` is refused by Claude Code when the file is outside the session's allowed directories, which happens in a session without a scratchpad. `record` now takes `--file` (devkit 0.3.0), and the skill uses it. On the rerun every check passed.
 - [ ] 8.2 Run the devkit and root test suites clean; PR merged.
 
-## 9. Codex (deferred until Codex credentials exist; may be split into its own change)
+## 9. Codex
 
-- [ ] 9.1 Check the Codex docs for `SessionStart` and `UserPromptSubmit` and their payload fields. Then add `session-start`, `user-prompt-submit` and `stop` to the Codex adapter, with allow printed as `{}` and a block as `decision: "block"` (D12a). Verify with recorded-payload tests matching 3.4.
-- [ ] 9.2 Make the skill work under Codex: install it into Codex's skills directory, and run focuses one after another when subagents aren't available, saying so in the output. Verify in a live Codex session with the 8.1 checks.
-- [ ] 9.3 Run `codex exec review --help` to settle the subcommand and flags. Then add the `external: [codex]` setting (an "unknown setting" error until then), the background run, translation of its findings to the reviewer JSON, the shared checker, and the notice when the binary or authentication is missing. The second-session guard (D12b) already exists in the stop decision (3.2). Verify with:
-  - a CLI-mocked test of the translation;
-  - a live Claude session where Codex findings reach the checker;
-  - a check that Codex's own Stop hook does not start a loop.
-- [ ] 9.4 Check Codex inside cplt: it needs network access to OpenAI, read access to `~/.codex`, and its own Linux sandbox. Record what cplt needs in the README. Verify with one external review run under cplt.
+Moved to the change `devkit-review-codex`.
