@@ -126,7 +126,9 @@ Depends on devkit-core groups 1–3 being merged (rule engine, config, Claude ad
   - the dashboard shows the loop.
 
   Done 2026-11-14 with headless `claude -p` sessions (Claude Code telemetry on). The first run found that `record < file` is refused by Claude Code when the file is outside the session's allowed directories, which happens in a session without a scratchpad. `record` now takes `--file` (devkit 0.3.0), and the skill uses it. On the rerun every check passed.
-- [ ] 8.2 Run the devkit and root test suites clean; PR merged.
+- [x] 8.2 Run the devkit and root test suites clean; PR merged.
+
+  devkit: 552 passed; root: 240 passed, 3 skipped; CI green on PR #11. This change was archived in PR #11 itself, so merging that PR completes this task.
 
 ## 9. Codex
 
