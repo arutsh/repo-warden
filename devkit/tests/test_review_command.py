@@ -206,6 +206,22 @@ def test_record_derives_counts(in_repo, capsys, monkeypatch):
     assert loop(in_repo)["record"] == {"fixed": 1, "open": 1, "dropped": 1}
 
 
+def test_record_reads_the_findings_file(in_repo, capsys, monkeypatch, tmp_path):
+    blocked_round_1(in_repo)
+    path = tmp_path / "round1.json"
+    path.write_text(json.dumps([finding("fixed"), finding("discuss")]), encoding="utf-8")
+    code, out, _ = run(capsys, monkeypatch, "record", "--file", str(path), stdin="not json")
+    assert code == 0 and out.startswith("recorded: 1 fixed, 1 open, 0 dropped\n")
+    assert loop(in_repo)["record"] == {"fixed": 1, "open": 1, "dropped": 0}
+
+
+def test_record_with_a_missing_file_records_nothing(in_repo, capsys, monkeypatch, tmp_path):
+    blocked_round_1(in_repo)
+    code, out, err = run(capsys, monkeypatch, "record", "--file", str(tmp_path / "nope.json"), stdin="[]")
+    assert code == 1 and out == "" and "nope.json" in err
+    assert loop(in_repo)["record"] is None
+
+
 def test_record_counts_questions_as_open(in_repo, capsys, monkeypatch):
     blocked_round_1(in_repo)
     run(capsys, monkeypatch, "record", stdin=json.dumps([finding("question", score=50)]))

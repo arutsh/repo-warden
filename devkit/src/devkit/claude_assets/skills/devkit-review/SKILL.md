@@ -121,8 +121,9 @@ directory, **outside the repo**: a file in the repo would itself become part of 
 `outcome` is `fixed`, `discuss`, `question` or `dropped`, and a dropped finding needs a `reason`. A
 finding that wasn't checked has no `score`. A round with no findings is an empty array `[]`.
 
-Then run `devkit review record --session <id> < <that file>`. Always redirect the file: never put the
-JSON in the command line, a heredoc or `echo`, since quoted code breaks the shell quoting. If
+Then run `devkit review record --session <id> --file <that file>`. Always pass the file with `--file`:
+never put the JSON in the command line, a heredoc or `echo`, since quoted code breaks the shell
+quoting, and don't redirect it with `<`, since the agent may not be allowed to read outside the repo. If
 `record` rejects the file, fix what it names and run it again. It prints the counts and the ids of
 the findings left open (`discuss` and `question`), in the order they appear in the file.
 

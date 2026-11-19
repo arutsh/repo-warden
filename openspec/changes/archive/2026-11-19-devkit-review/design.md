@@ -153,7 +153,7 @@ Each subcommand finds the repo from the cwd and the session from the state's sin
   ```
   Round 1 lists every configured focus; later rounds list `followup_reviewers`.
 - **`diff`** prints `git diff --stat` followed by the full diff for the round's `from..at`, using the D4 excludes and hardening.
-- **`record`** reads a JSON array of findings on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10). It prints the counts and, when the records were logged, the `finding_id` of each open finding, which the skill shows in its To discuss list (D8).
+- **`record`** reads a JSON array of findings from `--file PATH`, or on stdin, validates it, derives the counts, writes the round's record, and emits the log records (D10). It prints the counts and, when the records were logged, the `finding_id` of each open finding, which the skill shows in its To discuss list (D8).
 - **`skip`** writes a skipped record for the round.
 - **`verdict`** appends a verdict log record. It is the one command that exits non-zero when its log write fails, since the record is all it does.
 - **`reset`** deletes the state file.
@@ -218,7 +218,7 @@ The plugin uses a single threshold of 80. Splitting it here keeps uncertain find
 - fixes the obvious findings (spec definition);
 - re-runs the relevant tests;
 - lists the rest, each with its evidence and any objection it has;
-- writes every finding, with its outcome, to a JSON file in its scratch directory and runs `devkit review record < <file>`. Findings quote code, and inlining that in a heredoc or `echo` breaks on quotes and `$`;
+- writes every finding, with its outcome, to a JSON file in its scratch directory and runs `devkit review record --file <file>`. Findings quote code, and inlining that in a heredoc or `echo` breaks on quotes and `$`. A `<` redirect is not used either: Claude Code refuses a redirect from outside the session's allowed directories, and a session without a scratchpad has nowhere else to put the file (found in task 8.1);
 - shows each finding's id in the To discuss list, so a later `verdict` can refer to it.
 
 Its final message has three parts: **Fixed**, **To discuss**, **Dropped: N** (with reasons grouped). The skill also works on demand (`/devkit-review`). With no active loop, it starts one through `devkit review plan --start`, so manual and hook-started runs share the same state.
@@ -301,28 +301,11 @@ There is no other exporter.
 
 The user chooses. devkit doesn't write Claude's `env` settings for the user, because the user's settings are theirs to change. The README gives the snippet for `settings.json` `env`.
 
-### D12. Codex (deferred until Codex credentials exist)
-This part is designed now so that the shipped schema and state machine don't have to change later. Two separate pieces.
-
-**(a) Codex as the main agent.**
-
-The adapter would map:
-- Codex `Stop` → `stop`;
-- `SessionStart` and `UserPromptSubmit` → the other two phases, if Codex provides them. To be checked against the Codex docs at the time.
-
-Codex Stop must print JSON on exit 0, so "allow" becomes `{}`. The `devkit-review` SKILL.md follows the open Agent Skills format, so Codex can load it from its skills directory.
-
-Codex subagents are defined in TOML, and I've only seen them described by third parties. Until that is confirmed, the skill runs the focuses one after another in the same session on Codex. That is less independent, and the skill says so in its output. The state machine and `devkit review` need no changes.
-
-**(b) Codex as an external reviewer from a Claude session.**
-
-- A new `review` setting, `external: [codex]`. It is not accepted until it is built: today it is an "unknown setting" error, so it can never be silently ignored.
-- When it is set, the skill runs `codex exec review --base <base> --json` in round 1, or `--uncommitted` where that fits better. It runs in the background, because Bash's default timeout is 2 minutes. The exact subcommand and flags must be checked with `codex exec review --help` first, because third-party sources disagree.
-- Codex findings are turned into the reviewer JSON format and go through the same checker. Nothing from Codex is trusted unchecked.
-- A missing `codex` binary or missing authentication skips this step, with a notice in the round's output.
-- **Recursion:** a Codex review doesn't change the working tree, so if Codex has devkit hooks installed, its own Stop decision sees `cur == turn_start` and doesn't trigger. As a second safeguard, the decision won't start a loop in a repo where a different session has an active loop. This guard is built with the stop decision (task 3.2), for every agent.
-- **Sandbox:** inside cplt, Codex needs network access to OpenAI, read access to `~/.codex`, and its own Linux sandbox, which may clash with cplt. This needs a live check.
-- The same "external reviewer command" shape also allows `claude -p` as the external reviewer of a Codex session.
+### D12. Codex (moved to `devkit-review-codex`)
+Codex as the main agent and Codex as an external reviewer are designed and built in the change `devkit-review-codex`. This change ships only what that design relies on:
+- the config schema, which rejects `external` as an unknown setting until it is built;
+- the turn phases, which don't depend on the agent;
+- **(b) the second-session guard:** the stop decision won't start a loop in a repo where a different session has an active loop. It is built with the stop decision (task 3.2), for every agent.
 
 ## Risks / Trade-offs
 

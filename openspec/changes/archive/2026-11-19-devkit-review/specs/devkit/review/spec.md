@@ -137,7 +137,7 @@ They SHALL NOT change any ref, the user's index or the working tree.
 `devkit review` SHALL provide these subcommands for the skill and the user:
 - `plan`: prints the active round as JSON: round number, maximum rounds, the focuses to run with their models, and the checker model. `plan --start` first starts an on-demand loop when none is active.
 - `diff`: prints the diff the active round covers, with the `secrets` exclusions applied.
-- `record`: reads the round's findings as JSON on stdin and records the round's outcome. Each finding gives its focus, model, file, line, claim, checker score and outcome (`fixed`, `discuss`, `question` or `dropped`, plus a reason when dropped). The fixed, open and dropped counts SHALL be derived from the findings. Input that doesn't parse SHALL be rejected with a non-zero exit, and nothing SHALL be recorded. `record` SHALL print the counts and, when the finding records were logged, the `finding_id` of each finding left open (`discuss` or `question`).
+- `record`: reads the round's findings as JSON from a file named with `--file`, or on stdin, and records the round's outcome. Each finding gives its focus, model, file, line, claim, checker score and outcome (`fixed`, `discuss`, `question` or `dropped`, plus a reason when dropped). The fixed, open and dropped counts SHALL be derived from the findings. Input that doesn't parse SHALL be rejected with a non-zero exit, and nothing SHALL be recorded. `record` SHALL print the counts and, when the finding records were logged, the `finding_id` of each finding left open (`discuss` or `question`).
 - `skip --reason TEXT`: marks the current snapshot as reviewed without a review. It is meant for when the user asked to skip, and the end-of-turn summary SHALL tell the user it was skipped and why.
 - `verdict <finding_id> accepted|rejected [--note TEXT]`: logs the user's verdict on a finding (see the review-telemetry spec).
 - `reset`: clears this repo's review state.
@@ -174,7 +174,7 @@ The `devkit-review` skill SHALL instruct the agent to run each round as follows:
 
    After fixing, it SHALL re-run the relevant tests. It SHALL NOT commit, push or stage anything.
 6. The main session SHALL list every other surviving finding for discussion, each with its evidence. If it disagrees with a finding that passed the check, it SHALL list the finding with its objection, not drop it.
-7. The main session SHALL pass every finding to `devkit review record`, dropped ones included, with its outcome. It SHALL write the findings JSON to a file and redirect that file into `record`, never inline it in the shell command.
+7. The main session SHALL pass every finding to `devkit review record`, dropped ones included, with its outcome. It SHALL write the findings JSON to a file outside the repo and pass its path to `record` with `--file`. It SHALL NOT inline the JSON in the shell command or redirect the file into `record`, since the agent may not be allowed to read a file outside the repo through a redirect.
 8. When the user later accepts or rejects a finding that was up for discussion, the main session SHALL record that with `devkit review verdict`.
 
 The skill SHALL be runnable on demand outside the hook. In that case it reviews the changes since the last reviewed snapshot.
