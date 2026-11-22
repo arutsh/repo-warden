@@ -112,8 +112,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"repo: {top} ({'opted in: .devkit.yaml' if cfg.opted_in else 'not opted in'})")
     print(f"repos: {cfg.repos}  ({cfg.repos_source}); style rules {'run' if cfg.in_scope else 'do not run'} here")
     print("rules:")
+    width = max(map(len, cfg.rules))
     for name, rc in cfg.rules.items():
-        print(f"  {name:<16} {str(rc.level):<6} ({rc.sources['level']})")
+        print(f"  {name:<{width}} {str(rc.level):<6} ({rc.sources['level']})")
         for key, value in rc.settings.items():
             print(f"    {key}: {json.dumps(value)}  ({rc.sources[key]})")
     if cfg.ignored:

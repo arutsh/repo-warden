@@ -191,7 +191,7 @@ def test_status_levels_and_sources(repo, user_config, monkeypatch, capsys):
     monkeypatch.chdir(repo)
     assert main(["status"]) == 0
     out = capsys.readouterr().out
-    assert "opted in: .devkit.yaml" in out and "secrets          block  (default)" in out
+    assert "opted in: .devkit.yaml" in out and "secrets            block  (default)" in out
     assert 'patterns: ["*.tfvars"]  (user: ' in out
     assert "rules.secrets.level: off (repo: .devkit.yaml: a repo cannot loosen a guard rule)" in out
 
