@@ -2,6 +2,7 @@
 # `devkit status` shows the effective settings; the devkit README documents each rule.
 rules:
   comment_brevity: { level: block, max_lines: 2 }
+  review: { level: block }
 
   # test_factories: { level: warn, discouraged_calls: [make_valid_user] }
   # branch_name: { level: block, pattern: '^(feat|fix|chore)/.+$', base: main }

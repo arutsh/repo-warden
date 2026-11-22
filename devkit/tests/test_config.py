@@ -133,4 +133,4 @@ def test_readme_example_configs_load(repo, user_config, monkeypatch, capsys):
     monkeypatch.chdir(repo)
     assert main(["status"]) == 0
     out = capsys.readouterr().out
-    assert "ignored settings" not in out and "branch_name      block  (repo: .devkit.yaml)" in out
+    assert "ignored settings" not in out and "branch_name        block  (repo: .devkit.yaml)" in out

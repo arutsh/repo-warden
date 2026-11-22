@@ -9,8 +9,8 @@ cover things like not reading secret files and keeping code comments short. The 
 devkit is a separate package that lives in the repo-warden repository. repo-warden (the broker) does not depend on it,
 and installing repo-warden installs nothing from devkit. Everything is opt-in.
 
-> Status: `devkit-core` complete. Five rules (`secrets`, `self_guard`, `comment_brevity`,
-> `test_factories`, `branch_name`), the Claude Code and Codex CLI adapters, `devkit check` with a
+> Status: `devkit-core` complete. Seven rules (`secrets`, `self_guard`, `protected_branches`,
+> `comment_brevity`, `test_factories`, `branch_name`, `review`), the Claude Code and Codex CLI adapters, `devkit check` with a
 > git pre-commit hook and a CI workflow, and `devkit init`.
 
 > [!WARNING]
@@ -74,7 +74,7 @@ the hook's content, so you need to trust again after a reinstall that changes th
 | Repo | `devkit init`, which writes `.devkit.yaml` (or set `repos: all`) | delete `.devkit.yaml` |
 | Rule | `level: warn` or `block` | `level: off` |
 
-Guard rules (`secrets`, `self_guard`) run in every repo, and outside repos too, once the agent hook is installed.
+Guard rules (`secrets`, `self_guard`, `protected_branches`) run in every repo, and outside repos too, once the agent hook is installed.
 Style rules (`comment_brevity`, `test_factories`, `branch_name`) run only in opted-in repos, unless the
 user config sets `repos: all`.
 
@@ -112,8 +112,9 @@ rules:
 ```
 
 The agent can edit the repo file, so **a repo can only tighten a guard rule**. It can raise
-the level and add patterns. It can't lower the level, add exemptions or change `repos`. Such
-settings are ignored, and `devkit status` lists them.
+the level, add `secrets` patterns and add protected branches. It can't lower the level, add
+exemptions (`secrets.exempt`, `protected_branches.exempt_repos`) or change `repos`. Such settings
+are ignored, and `devkit status` lists them.
 
 If a config file is invalid, `devkit status` exits non-zero and names the file and key. Hooks
 skip the broken file, say so in their output, and keep enforcing with the remaining layers.
@@ -167,6 +168,58 @@ it off.
 Like `secrets`, this is string matching. A command that doesn't spell out `devkit uninstall`, such as
 `python -m devkit.cli uninstall` or a `sed` on the file, gets past it. For a hard lock, add a deny
 rule to Claude Code's own permissions, for example `"deny": ["Bash(devkit uninstall*)"]`.
+
+### `protected_branches` (guard, default `block`)
+
+Stops the agent committing on, or pushing to, a protected branch: `main` and `master` by default.
+It refuses a shell command that, in any of its `&&`, `||`, `;`, `|` or newline-separated parts:
+
+- runs `git commit` (including `--amend`) while the current branch is protected;
+- runs `git push` that would update or delete a protected branch:
+  - one named as the destination (`origin main`, `+main`, `HEAD:main`, `feat:main`, `:main`, `refs/heads/main`, `--delete origin main`);
+  - `--all`, `--mirror` or a `*` refspec;
+  - a push that names no branch (`git push`, `git push origin`, `git push origin HEAD`) while on a protected branch.
+
+The block message tells the agent to create a branch, push it and open a pull request, or to ask
+you to push to `main` yourself.
+
+These are fine:
+- `gh pr merge`;
+- commits and pushes on other branches;
+- tag pushes;
+- `git merge` or `git rebase` on `main`, since publishing the result needs a push.
+
+The rule follows the command left to right:
+- `cd <dir>` and `git -C <dir>` change the repo it looks at;
+- `git switch -c feat/x && git commit && git push -u origin feat/x` passes, because the commit happens on the new branch;
+- a script run with `bash -c` or `sh -c` is checked too, as Codex wraps every command that way.
+
+Heredoc bodies and commit messages are data, so a message that says "git push origin main" is fine.
+The current branch is read from `.git/HEAD` without running git. A detached HEAD and a directory
+outside any repo are never blocked.
+
+| Setting | Default | Notes |
+|---|---|---|
+| `branches` | `[main, master]` | each layer adds to the list; the repo config can add branches too |
+| `exempt_repos` | `[]` | repo paths (`~` allowed) where the rule is off; user config only |
+
+A repo can't switch the rule off or exempt itself. To let agents work on `main` in a repo of your
+own, such as dotfiles, use the user config:
+
+```yaml
+# ~/.config/devkit/config.yaml
+rules:
+  protected_branches:
+    exempt_repos: ['~/dotfiles']
+    # or everywhere: `protected_branches: warn` (tells the agent, doesn't block) or `off`
+```
+
+**The real protection is on the server.** Like `secrets`, this is string matching. A git alias, a
+script file or `eval` gets past it. On GitHub, protect the branch and turn on **Do not allow
+bypassing the above settings** (`enforce_admins`): without it, a push with an admin's credentials,
+which is what a local agent uses, goes straight through. If the branch also requires an approving
+review and you are the only maintainer, that setting stops you merging your own PRs too. Set the
+required approvals to 0 and keep the required status checks, or add a second maintainer.
 
 ### `comment_brevity` (style, default `block`)
 
