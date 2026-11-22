@@ -32,7 +32,8 @@ Run the `scope` command yourself and read the diff, then gather what the reviewe
 - **Rule files:** the paths that exist of `AGENTS.md` and `CLAUDE.md` at the repo root and in the
   directories of the changed files, and `.devkit.yaml`. If the repo has an `openspec/` directory, run
   `openspec list --json` and add the directory of each change in progress
-  (`openspec/changes/<name>/`). Paths only: never paste or summarise the files.
+  (`openspec/changes/<name>/`), and `openspec/config.yaml` when it exists. Paths only: never paste or
+  summarise the files.
 
 ## 2. Reviewers, in parallel
 

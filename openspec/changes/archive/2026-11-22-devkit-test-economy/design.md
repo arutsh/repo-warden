@@ -17,7 +17,7 @@ See proposal.md for the motivation. What exists today:
 **Non-Goals:**
 - Updating openspec rules in repos that already have them. init keeps printing the suggestion. A merge or `devkit init --refresh` can come later if this turns out to matter.
 - A dedicated spec reviewer focus. That would add a sixth focus to the config, and a separate agent, for what fits in one paragraph of the rules reviewer.
-- Changing the AGENTS.md template's other conventions, such as the `tests/factories/` line, beyond the one new line.
+- Changing the AGENTS.md template's other conventions beyond the one new line, except the `tests/factories/` line. That line moves out of the template (D7).
 
 ## Decisions
 
@@ -44,6 +44,13 @@ The reviewer and templates say "table-driven or parametrized test" and "the test
 
 ### D6. Repo 0 uses the shipped commands, and adds only what's specific to this project
 In repo-warden, run `devkit install` and `devkit init --agents-md --openspec`. init leaves `.devkit.yaml` unchanged and creates `AGENTS.md`, `CLAUDE.md` and the openspec rules. Then fill in only the Project and Commands TODOs (what the repo is, `uv run pytest`), and set `review: { level: block }` in `.devkit.yaml`. If anything else in the generated files is wrong for repo-warden, fix it in the template, not here.
+
+### D7. The factories convention is opt-in
+The template's line "prefer the factories in `tests/factories/`" assumed every repo has factories. repo-warden doesn't, and the rules reviewer flagged the generated line as a rule that doesn't fit the repo (found in task 3.4's review round).
+
+Factories belong with the `test_factories` rule, which is already off by default. So the line is removed from `AGENTS.template.md`, and the README's `test_factories` section tells users to add it to their `AGENTS.md` when they turn the rule on.
+
+Alternative considered: have init write the line only when `.devkit.yaml` enables `test_factories`. But init writes `.devkit.yaml` and `AGENTS.md` in the same run, from a template where the rule is commented out, so it would never fire. A later `init` run doesn't rewrite `AGENTS.md` either.
 
 ## Risks / Trade-offs
 

@@ -1,6 +1,6 @@
 ---
 name: devkit-review-rules
-description: Project-rules reviewer for the devkit-review skill. Checks a change against AGENTS.md, CLAUDE.md, .devkit.yaml and the active openspec change. Started by the skill, not on its own.
+description: Project-rules reviewer for the devkit-review skill. Checks a change against AGENTS.md, CLAUDE.md, .devkit.yaml, the active openspec change and the openspec config rules. Started by the skill, not on its own.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -21,7 +21,10 @@ Places where the change breaks a written rule of this project:
 - when your prompt names an openspec change in progress: its `proposal.md`, `design.md`, `tasks.md`
   and `specs/`. Check the diff against the requirements and scenarios it implements, and against
   the decisions in the design: a missing scenario, behaviour the spec rules out, or a task marked
-  done whose behaviour isn't there.
+  done whose behaviour isn't there;
+- when the diff changes files under `openspec/changes/` and your prompt names `openspec/config.yaml`:
+  the `rules:` in it, for each artifact they name (`proposal`, `specs`, `design`, `tasks`). Check the
+  changed artifact files against those rules as you would check code against `AGENTS.md`.
 
 Report only a rule that is written down. Cite it: the file and the rule's words.
 

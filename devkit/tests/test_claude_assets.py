@@ -38,6 +38,9 @@ def test_agent_definition(rel):
         contract = re.search(r"```json\n(.*?)```", body, re.S).group(1)
         assert set(json.loads(contract)[0]) == {"focus", "file", "line", "quote", "claim", "failure_scenario"}
         assert json.loads(contract)[0]["focus"] == focus
+    if focus == "tests":  # reviewers run in repos of any language
+        assert not re.search(r"\b(pytest|jest|unittest|go test)\b", body, re.I)
+        assert "What's too much" in body
 
 
 def test_checker_carries_rubric_and_thresholds():
@@ -78,6 +81,7 @@ def test_skill_process_points():
     text = " ".join(SKILL_TEXT.split())
     assert "never a fork of this conversation" in text
     assert "Paths only: never paste or summarise the files" in text
+    assert "and `openspec/config.yaml` when it exists" in text
     assert "Start at most 10 at a time" in text
     assert "dropped** with the reason `no evidence`" in text
     assert "Never commit, push, stage" in text

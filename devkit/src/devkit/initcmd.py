@@ -52,7 +52,7 @@ def _claude_md(top: Path, out: list[str]) -> None:
 
 
 def _openspec(top: Path, out: list[str]) -> None:
-    """Append the generic `rules:` only when the config has none; otherwise print them."""
+    """Append the generic `rules:` and `operations:` only when the config has neither; otherwise print them."""
     import yaml
 
     rel, snippet = "openspec/config.yaml", template("openspec-rules.yaml")
@@ -71,8 +71,9 @@ def _openspec(top: Path, out: list[str]) -> None:
         raise InitError(f"{path} is not valid YAML ({e}); nothing was changed") from None
     if data is not None and not isinstance(data, dict):
         raise InitError(f"{path}: expected a mapping; nothing was changed")
-    if data and "rules" in data:
-        out.append(f"{rel}: already has rules, left unchanged; {suggestion}")
+    found = [k for k in ("rules", "operations") if data and k in data]
+    if found:  # appending would duplicate the key; merging isn't worth it
+        out.append(f"{rel}: already has {' and '.join(found)}, left unchanged; {suggestion}")
         return
     gap = "" if not text else "\n" if text.endswith("\n") else "\n\n"
     with open(path, "a", encoding="utf-8") as f:
