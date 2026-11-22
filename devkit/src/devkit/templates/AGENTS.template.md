@@ -18,7 +18,7 @@ TODO: what this repo is, its main parts, and how to run it.
   PR description or the docs.
 - Don't read, print or change secret files (`.env*`, keys, certificates). Ask the user for what you
   need instead.
-- In tests, prefer the factories in `tests/factories/` to building model objects by hand.
+- Before adding a test, look for an existing one that covers the behaviour, and extend it instead.
 - Work on a branch named by the repo's convention, never directly on the main branch.
 - Keep changes small and focused, and run the tests before you say you are done.
 

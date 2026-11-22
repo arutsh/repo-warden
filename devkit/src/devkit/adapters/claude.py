@@ -61,13 +61,14 @@ def events(payload: dict[str, Any], phase: Phase, *, content: bool | None = None
     return [Event("edit", phase, path=path, before=before, after=after, cwd=cwd)]
 
 
-_HANDBACK = "Another Claude session sent a message:\n<agent-message "
+# A report that arrives mid-turn is queued and delivered without the "Another Claude session" line.
+_DELIVERIES = ("<task-notification>", "Another Claude session sent a message:\n<agent-message ", "<agent-message ")
 
 
 def _task_delivery(text: str) -> bool:
     """A background task's `<task-notification>`, or a subagent's report handed back as an agent message
     (sent before its notification)."""
-    return text.startswith("<task-notification>") or text.startswith(_HANDBACK)
+    return text.startswith(_DELIVERIES)
 
 
 def turn_event(payload: dict[str, Any], phase: Phase) -> Event:

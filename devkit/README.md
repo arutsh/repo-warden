@@ -278,6 +278,10 @@ of those forms is silently not found.
 |---|---|---|
 | `discouraged_calls` | `[]` | function names to warn about, e.g. `[make_valid_user]` |
 
+Factories are opt-in, like the rule: the `AGENTS.md` that `devkit init --agents-md` writes doesn't
+mention them. When you turn the rule on, add the convention to your `AGENTS.md` yourself, for example
+"In tests, prefer the factories in `tests/factories/` to building model objects by hand."
+
 ### `branch_name` (style, default `off`)
 
 Checks the name of a branch the agent creates with `git checkout -b`/`-B`, `git switch -c`/`-C` or
@@ -421,8 +425,8 @@ with `devkit review record` and ends with **Fixed**, **To discuss** (each with i
 | Focus | Default model | Looks for |
 |---|---|---|
 | `correctness` | `opus` | bugs in the changed lines and the code they call or that calls them |
-| `rules` | `sonnet` | breaks of `AGENTS.md`, `CLAUDE.md`, `.devkit.yaml`, and the specs and tasks of the openspec change in progress |
-| `tests` | `sonnet` | changed behaviour with no test, and tests that can't fail |
+| `rules` | `sonnet` | breaks of `AGENTS.md`, `CLAUDE.md`, `.devkit.yaml`, and the specs and tasks of the openspec change in progress; changed openspec artifacts that break the `rules:` in `openspec/config.yaml` |
+| `tests` | `sonnet` | changed behaviour with no test, tests that can't fail, and excess tests: a duplicate of an existing test (named in the finding), cases that should be one table-driven test, tests of internals, tests beyond the intent or spec. Its fixes delete, merge or extend tests |
 | `security` | `sonnet` | injection, path handling, secrets, trust boundaries |
 | `history` | `sonnet` | regressions against past fixes, from `git log` and `git blame` |
 | checker | `opus` | not a focus: re-checks one finding against the code |
@@ -649,15 +653,20 @@ framework, use a `local` hook with `entry: devkit check --staged`, `language: sy
 ```sh
 devkit init                     # writes a commented .devkit.yaml, which opts the repo in
 devkit init --agents-md         # also AGENTS.md, and CLAUDE.md containing `@AGENTS.md`
-devkit init --openspec          # also generic rules in openspec/config.yaml
+devkit init --openspec          # also generic rules and apply guidance in openspec/config.yaml
 devkit init --ci                # also .github/workflows/devkit.yml
 ```
 
 The flags combine. `init` never overwrites a file: when one exists, it says so and leaves it alone.
 With `--agents-md`, a `CLAUDE.md` you already have is kept, and `init` tells you to add `@AGENTS.md`
-to it if it doesn't import it. With `--openspec`, a `rules:` block is appended only when
-`openspec/config.yaml` has none. Otherwise, or when there is no openspec config yet, the suggested
-rules are printed for you to merge by hand.
+to it if it doesn't import it. With `--openspec`, `rules:` and `operations:` blocks are appended
+only when `openspec/config.yaml` has neither key. The rules ask for small specs (scenarios for
+observable behaviour only, MODIFIED deltas instead of restated requirements), a non-goals list in
+the design, and tasks that name the existing test file they extend. The apply guidance says to look
+for an existing test before writing one. When the config already has `rules:` or `operations:`, or
+there is no openspec config yet, init prints the suggested blocks instead. Copy the lines you want
+into your config by hand: init never rewrites them, so repos that ran it before devkit 0.5.0 don't
+get the new rules otherwise.
 
 The CI workflow runs `devkit check --range "origin/<base>..HEAD"` on every pull request. It
 installs devkit with `uvx` from this repository at `DEVKIT_REF`, which is `main` in the template.

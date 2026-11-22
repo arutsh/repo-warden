@@ -120,7 +120,13 @@ def handback(cwd):
                        "delegated to.\n  []\n</agent-message>\n")
 
 
-@pytest.mark.parametrize("delivery", [notification, handback])
+# Recorded 2026-11-22: a report that lands while the agent is mid-turn is queued, then delivered bare.
+def queued_handback(cwd):
+    return prompt(cwd, '<agent-message from="af7818778c98bedd2">\n[Subagent hand-back] The text below is the final '
+                       "report of a subagent this session delegated to.\n  []\n</agent-message>")
+
+
+@pytest.mark.parametrize("delivery", [notification, handback, queued_handback])
 def test_task_notification_does_not_end_the_round(opted_in, delivery):
     start_turn(opted_in)
     (opted_in / "src" / "app.py").write_text("a = 2\n")

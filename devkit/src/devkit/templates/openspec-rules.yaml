@@ -3,8 +3,16 @@ rules:
     - Say why before what, and list what is out of scope
   specs:
     - Give every requirement at least one WHEN/THEN scenario
+    - Write scenarios only for behaviour a caller or user can observe, not for internals
+    - Change an existing requirement with a MODIFIED delta instead of restating it as a new one
   design:
     - For each decision, name the alternative considered and why it was rejected
+    - List the non-goals
   tasks:
     - Say how each task will be verified
     - Group tasks so that each group can be merged as one pull request
+    - For each test task, name the existing test file it extends, or say why it needs a new one
+operations:
+  apply:
+    guidance:
+      - Before writing a test, search the existing tests for one that covers the behaviour, and extend it instead of adding a new one

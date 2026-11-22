@@ -1,5 +1,6 @@
 """`devkit init` and its templates."""
 
+import pytest
 import yaml
 
 from devkit import config
@@ -56,18 +57,21 @@ def test_openspec_rules_appended_when_none(repo):
     path.parent.mkdir()
     path.write_text("schema: spec-driven\n# rules:\n#   proposal: []")
     assert "openspec/config.yaml: rules added" in init(repo, openspec=True)
-    data = yaml.safe_load(path.read_text())
-    assert data["schema"] == "spec-driven" and data["rules"] == yaml.safe_load(template("openspec-rules.yaml"))["rules"]
+    data, shipped = yaml.safe_load(path.read_text()), yaml.safe_load(template("openspec-rules.yaml"))
+    assert data["schema"] == "spec-driven"
+    assert (data["rules"], data["operations"]) == (shipped["rules"], shipped["operations"])
     assert path.read_text().startswith("schema: spec-driven\n# rules:\n#   proposal: []\n")
 
 
-def test_openspec_with_rules_unchanged_and_printed(repo):
+@pytest.mark.parametrize("key, body", [("rules", "rules:\n  tasks: [x]\n"),
+                                       ("operations", "operations:\n  apply:\n    guidance: [x]\n")])
+def test_openspec_with_rules_unchanged_and_printed(repo, key, body):
     path = repo / "openspec" / "config.yaml"
     path.parent.mkdir()
-    path.write_text("schema: spec-driven\nrules:\n  tasks: [x]\n")
+    path.write_text("schema: spec-driven\n" + body)
     out = init(repo, openspec=True)
-    assert path.read_text() == "schema: spec-driven\nrules:\n  tasks: [x]\n"
-    assert any("already has rules" in line and "proposal:" in line for line in out)
+    assert path.read_text() == "schema: spec-driven\n" + body
+    assert any(f"already has {key}," in line and "proposal:" in line for line in out)
 
 
 def test_openspec_missing_config_prints_rules(repo):
